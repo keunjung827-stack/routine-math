@@ -1,0 +1,2687 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>루틴수학</title>
+
+<!-- 홈 화면 추가 시 전체화면 앱처럼 동작 -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="루틴수학" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#173226" />
+
+<!-- Tailwind (빌드 없이 CDN으로 바로 사용) -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- 브라우저에서 바로 JSX를 변환해주는 Babel -->
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+
+<style>
+  html, body, #root { height: 100%; margin: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-type="module" data-presets="react">
+import React, { useState, useEffect, useRef } from "https://esm.sh/react@18.3.1";
+import ReactDOM from "https://esm.sh/react-dom@18.3.1/client";
+import {
+  Home, Users, ClipboardList, BookOpen, CalendarClock, ClipboardCheck,
+  Bell, Inbox, ShieldCheck, FileText, LogOut, ChevronLeft, Check, X,
+  Plus, Trash2, Pencil, Copy, Loader2, Lock, Calendar, Repeat, FlaskConical,
+  Video, Armchair, GraduationCap, TrendingUp, MessageSquare, Users2, ClipboardSignature
+} from "https://esm.sh/lucide-react@0.383.0?external=react";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "https://esm.sh/recharts@2.12.7?external=react,react-dom";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+// ============================================================
+// 여기 두 줄만 Supabase 프로젝트 값으로 바꿔주세요.
+// (Supabase 대시보드 → Project Settings → API 에서 확인)
+// 비워두면(따옴표 안이 빈 상태) 이 브라우저에만 저장되는 localStorage 모드로 동작합니다.
+// ============================================================
+const SUPABASE_URL = "";
+const SUPABASE_ANON_KEY = "";
+
+const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+const TABLE = "app_storage";
+function localKey(key, shared) { return `routine_math_storage:${shared ? "shared" : "local"}:${key}`; }
+
+window.storage = {
+  async get(key, shared = false) {
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.from(TABLE).select("value").eq("key", key).eq("shared", !!shared).maybeSingle();
+        if (error) throw error;
+        if (!data) return null;
+        return { key, value: data.value, shared };
+      } catch (e) { console.error("storage.get (supabase) 실패", e); return null; }
+    }
+    try {
+      const raw = localStorage.getItem(localKey(key, shared));
+      if (raw === null) return null;
+      return { key, value: raw, shared };
+    } catch (e) { console.error("storage.get (localStorage) 실패", e); return null; }
+  },
+  async set(key, value, shared = false) {
+    if (supabase) {
+      try {
+        const { error } = await supabase.from(TABLE).upsert({ key, shared: !!shared, value, updated_at: new Date().toISOString() }, { onConflict: "key,shared" });
+        if (error) throw error;
+        return { key, value, shared };
+      } catch (e) { console.error("storage.set (supabase) 실패", e); return null; }
+    }
+    try {
+      localStorage.setItem(localKey(key, shared), value);
+      return { key, value, shared };
+    } catch (e) { console.error("storage.set (localStorage) 실패", e); return null; }
+  },
+  async delete(key, shared = false) {
+    if (supabase) {
+      try {
+        const { error } = await supabase.from(TABLE).delete().eq("key", key).eq("shared", !!shared);
+        if (error) throw error;
+        return { key, deleted: true, shared };
+      } catch (e) { console.error("storage.delete (supabase) 실패", e); return null; }
+    }
+    try {
+      localStorage.removeItem(localKey(key, shared));
+      return { key, deleted: true, shared };
+    } catch (e) { console.error("storage.delete (localStorage) 실패", e); return null; }
+  },
+  async list(prefix = "", shared = false) {
+    if (supabase) {
+      try {
+        let query = supabase.from(TABLE).select("key").eq("shared", !!shared);
+        if (prefix) query = query.like("key", `${prefix}%`);
+        const { data, error } = await query;
+        if (error) throw error;
+        return { keys: (data || []).map(r => r.key), prefix, shared };
+      } catch (e) { console.error("storage.list (supabase) 실패", e); return null; }
+    }
+    try {
+      const fullPrefix = localKey(prefix, shared);
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(fullPrefix)) keys.push(k.replace(localKey("", shared), ""));
+      }
+      return { keys, prefix, shared };
+    } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
+  },
+};
+
+
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const APP_ICON_DATA_URL = "";
+
+const todayStr = () => new Date().toISOString().slice(0, 10);
+const STORAGE_KEY = "routine_math_unified_v2";
+const PASS_RATE = 70;
+const ADMIN_PIN = "2025";
+const GRADES = ["중1", "중2", "중3", "고1", "고2", "고3"];
+const DAYS = ["월", "화", "수", "목", "금", "토"];
+const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+const TEST_TYPES = ["일일테스트", "주간테스트", "월말테스트", "누적테스트"];
+const ATT_STATUSES = ["출석", "지각", "결석"];
+const ROUTINE_ITEM_DEFS = [
+  { key: "class", label: "판서수업", kind: "boolean", unit: "" },
+  { key: "review", label: "개념복습", kind: "boolean", unit: "" },
+  { key: "practice", label: "문제풀이", kind: "number", unit: "문제" },
+  { key: "wrong", label: "오답", kind: "number", unit: "문제" },
+  { key: "homework", label: "숙제", kind: "boolean", unit: "" },
+];
+function studentsInScope(students, classGroups) {
+  return classGroups && classGroups.length ? students.filter(s => classGroups.includes(s.classGroup)) : students;
+}
+
+function mondayOf(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+function todayDayLabel() {
+  const idx = new Date().getDay();
+  return idx === 0 ? null : DAYS[idx - 1];
+}
+
+const DEFAULT_RULES = `1. 출결 규정
+· 결석은 사전에 앱을 통해 신청하는 것을 원칙으로 합니다.
+· 무단 결석 시 보강 신청이 제한될 수 있습니다.
+
+2. 지각 규정
+· 수업 시작 10분 이후 도착은 지각으로 처리됩니다.
+
+3. 보강 신청 규정
+· 보강은 앱에서 희망 일시를 신청해 주세요. 최소 24시간 전 신청을 권장드립니다.
+
+4. 클리닉 규정
+· 클리닉 시간 변경은 주 1회까지 앱에서 신청 가능합니다.
+
+5. 자습실 이용 규정
+· 자습실은 시간표에 등록한 교시에만 이용 가능합니다.
+· 좌석 정원을 초과하면 이용이 제한될 수 있습니다.
+
+6. 안내 정책
+· 성취율 미달, 숙제 미제출, 테스트 결과 등은 학원에서 알림으로 안내드립니다.`;
+
+const DEFAULT_EDU_PHILOSOPHY = `최고의 경쟁력은 습관이다
+
+하루의 작은 실행이 쌓여 흔들리지 않는 상위권을 만듭니다.
+
+· 환경 설정의 힘: 모두가 몰입하는 공간에서 스스로도 그 이상의 성과를 냅니다.
+· 꾸준함의 힘: 긍정적 실천이 습관이 되고, 체질이 되고, 각인이 됩니다.`;
+
+const CLASS_DETAILS = {
+  "중1": "기초 개념 다지기 + 학습 습관 형성 루틴",
+  "중2": "심화 개념 학습 + 내신 대비 루틴",
+  "중3": "고교 대비 심화반 + 내신 총정리 루틴",
+  "고1": "공통수학 개념 정착 + 내신 대비 루틴",
+  "고2": "수학1·2 심화 + 주 5일 자기주도 학습실",
+  "고3": "수능 실전 대비 + 약점 클리닉 루틴",
+};
+
+// 영상 파일 업로드 용량 제한 (base64로 저장소에 들어가므로 너무 큰 파일은 제한)
+const MAX_VIDEO_FILE_BYTES = 4 * 1024 * 1024; // 4MB
+
+function fileToDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+const emptyData = () => ({
+  students: [],
+  planners: [],
+  homeworks: [],
+  sessions: [],
+  tests: [],
+  alerts: [],
+  videos: [],
+  timetables: [],
+  seatCapacity: 30,
+  rules: DEFAULT_RULES,
+  eduPhilosophy: DEFAULT_EDU_PHILOSOPHY,
+  curricula: { ...CLASS_DETAILS },
+  teacherComments: [],
+  counselingNotes: [],
+  teachers: [],
+  attendance: [],
+  requests: [],
+  plannerBlocks: [],
+  routines: [],
+  dailyTasks: [],
+  dashboardNickname: "수학쌤",
+  attendanceCutoffTimes: {},
+  attendanceCutoffDefault: "16:00",
+});
+
+function useAppData() {
+  const [data, setDataState] = useState(emptyData());
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await window.storage.get(STORAGE_KEY, true);
+        if (res && res.value) setDataState({ ...emptyData(), ...JSON.parse(res.value) });
+      } catch (e) { /* first run */ }
+      setLoading(false);
+    })();
+  }, []);
+
+  const setData = async (next) => {
+    setDataState(next);
+    setSaving(true);
+    try { await window.storage.set(STORAGE_KEY, JSON.stringify(next), true); }
+    catch (e) { console.error("저장 실패", e); }
+    setSaving(false);
+  };
+
+  return { data, setData, loading, saving };
+}
+
+function syncAlerts(alerts, sourceKey, shouldExist, buildAlert) {
+  const existingPending = alerts.find(a => a.sourceKey === sourceKey && a.status === "대기");
+  if (shouldExist) {
+    if (existingPending) {
+      return alerts.map(a => a.sourceKey === sourceKey && a.status === "대기" ? { ...a, ...buildAlert(), id: a.id, sourceKey, status: "대기" } : a);
+    }
+    return [...alerts, { id: uid(), sourceKey, status: "대기", createdAt: new Date().toISOString(), ...buildAlert() }];
+  }
+  return existingPending ? alerts.filter(a => !(a.sourceKey === sourceKey && a.status === "대기")) : alerts;
+}
+
+const panel = { background: "#fffcf6", border: "1px solid #e4d8ba" };
+const btnGold = { background: "var(--gold)", color: "#1a1508" };
+const inputCls = "w-full rounded-lg px-3 py-2.5 text-sm outline-none";
+const inputStyle = { background: "#efe6d0", border: "1px solid #ddcda0", color: "#2b2417" };
+
+function Field({ label, children }) {
+  return (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="text-xs" style={{ color: "#7a6f52" }}>{label}</span>
+      {children}
+    </label>
+  );
+}
+function EmptyState({ text }) {
+  return <div className="text-center py-8 text-sm" style={{ color: "#8a7f5e" }}>{text}</div>;
+}
+function StatCard({ label, value, tone }) {
+  return (
+    <div className="rounded-2xl p-4 flex-1 min-w-[130px]" style={panel}>
+      <div className="text-xs mb-1" style={{ color: "#7a6f52" }}>{label}</div>
+      <div className="text-2xl font-bold" style={{ color: tone || "var(--gold)", fontFamily: "'Noto Serif KR', serif" }}>{value}</div>
+    </div>
+  );
+}
+function StudentSelect({ students, value, onChange, allowAll }) {
+  return (
+    <select className={inputCls} style={inputStyle} value={value} onChange={e => onChange(e.target.value)}>
+      {allowAll && <option value="">전체</option>}
+      {!allowAll && <option value="">학생 선택</option>}
+      {students.map(s => <option key={s.id} value={s.id}>{s.name} ({s.grade}{s.classGroup ? `·${s.classGroup}` : ""})</option>)}
+    </select>
+  );
+}
+function PinBoxes({ value, onChange, length = 4 }) {
+  const refs = useRef([]);
+  const digits = value.split("").concat(Array(length).fill("")).slice(0, length);
+  const setDigit = (i, v) => {
+    if (!/^[0-9]?$/.test(v)) return;
+    const next = digits.slice(); next[i] = v; onChange(next.join(""));
+    if (v && i < length - 1) refs.current[i + 1]?.focus();
+  };
+  const onKeyDown = (i, e) => { if (e.key === "Backspace" && !digits[i] && i > 0) refs.current[i - 1]?.focus(); };
+  return (
+    <div className="flex gap-2">
+      {digits.map((d, i) => (
+        <input key={i} ref={el => (refs.current[i] = el)} value={d} onChange={e => setDigit(i, e.target.value)} onKeyDown={e => onKeyDown(i, e)}
+          inputMode="numeric" maxLength={1} className="w-12 h-14 text-center text-xl rounded-xl outline-none"
+          style={{ background: "#efe6d0", border: "1px solid #ddcda0", color: "var(--gold)" }} />
+      ))}
+    </div>
+  );
+}
+function BackHeader({ title, onBack }) {
+  return (
+    <div className="flex items-center gap-2 mb-4">
+      <button onClick={onBack} className="p-1.5 rounded-lg" style={{ border: "1px solid #ddcda0" }}><ChevronLeft size={16} color="#5c543e" /></button>
+      <h2 className="text-lg font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>{title}</h2>
+    </div>
+  );
+}
+
+function findByPhone(students, name, pin) {
+  return students.find(s => s.name.trim() === name.trim() && (s.parentPhone || "").replace(/\D/g, "").slice(-4) === pin);
+}
+
+function PhoneLoginCard({ heading, sub, onSubmit, onBack }) {
+  const [name, setName] = useState("");
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+  const submit = () => {
+    const ok = onSubmit(name, pin);
+    if (!ok) setError("일치하는 정보가 없습니다. 이름과 전화번호 뒷 4자리를 확인해 주세요.");
+    else setError("");
+  };
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center px-6" style={{ background: "#f6f1e4" }}>
+      <div className="text-center mb-8">
+        <div className="text-xs tracking-[0.3em]" style={{ color: "var(--gold)" }}>ROUTINE MATH ACADEMY</div>
+        <h1 className="text-2xl font-bold mt-2" style={{ fontFamily: "'Noto Serif KR', serif" }}>{heading}</h1>
+        <p className="text-xs mt-1" style={{ color: "#7a6f52" }}>{sub}</p>
+      </div>
+      <div className="w-full max-w-xs flex flex-col gap-4 p-5 rounded-2xl" style={panel}>
+        <div>
+          <label className="text-xs" style={{ color: "#7a6f52" }}>이름</label>
+          <input className={inputCls} style={{ ...inputStyle, marginTop: 6 }} value={name} onChange={e => setName(e.target.value)} placeholder="예: 홍길동" />
+        </div>
+        <div>
+          <label className="text-xs" style={{ color: "#7a6f52" }}>전화번호 뒷 4자리</label>
+          <div className="mt-2"><PinBoxes value={pin} onChange={setPin} /></div>
+        </div>
+        {error && <p className="text-xs" style={{ color: "var(--coral)" }}>{error}</p>}
+        <button onClick={submit} className="w-full py-2.5 rounded-lg text-sm font-semibold" style={btnGold}>입장하기</button>
+      </div>
+      <button onClick={onBack} className="mt-8 text-xs" style={{ color: "#8a7f5e" }}>처음으로</button>
+    </div>
+  );
+}
+
+// ================= ADMIN: 대시보드 =================
+function Dashboard({ data }) {
+  const today = todayStr();
+  const todaysPlanners = data.planners.filter(p => p.date === today);
+  const avgRate = todaysPlanners.length
+    ? Math.round(todaysPlanners.reduce((s, p) => s + (p.planned ? (p.done / p.planned) * 100 : 0), 0) / todaysPlanners.length)
+    : null;
+  const pendingAlerts = data.alerts.filter(a => a.status === "대기").length;
+  return (
+    <div className="flex gap-3 flex-wrap">
+      <StatCard label="전체 학생" value={data.students.length} />
+      <StatCard label="오늘 평균 성취율" value={avgRate === null ? "-" : `${avgRate}%`} tone={avgRate !== null && avgRate < PASS_RATE ? "var(--coral)" : "var(--gold)"} />
+      <StatCard label="발송 대기 알림" value={pendingAlerts} tone={pendingAlerts ? "var(--coral)" : "var(--gold)"} />
+    </div>
+  );
+}
+
+// ================= ADMIN: 오늘 할 일 (체크리스트) =================
+function TodayChecklistTab({ data, setData }) {
+  const [editingNick, setEditingNick] = useState(false);
+  const [nickDraft, setNickDraft] = useState(data.dashboardNickname || "수학쌤");
+  const [filter, setFilter] = useState("전체");
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ type: "등원", label: "", time: "" });
+
+  const tasks = data.dailyTasks || [];
+  const pendingCount = tasks.filter(t => !t.done).length;
+  const totalCount = tasks.length;
+  const filtered = filter === "전체" ? tasks : tasks.filter(t => t.type === filter);
+
+  const saveNick = () => { setData({ ...data, dashboardNickname: nickDraft }); setEditingNick(false); };
+  const toggleDone = (id) => setData({ ...data, dailyTasks: tasks.map(t => t.id === id ? { ...t, done: !t.done } : t) });
+  const removeTask = (id) => setData({ ...data, dailyTasks: tasks.filter(t => t.id !== id) });
+  const addTask = () => {
+    if (!form.label.trim()) return;
+    const label = form.type === "등원" ? `${form.label.trim()} · 첫 수업` : form.label.trim();
+    setData({ ...data, dailyTasks: [...tasks, { id: uid(), type: form.type, label, time: form.time, done: false }] });
+    setForm({ type: "등원", label: "", time: "" });
+    setShowAdd(false);
+  };
+
+  const dayNames = ["일", "월", "화", "수", "목", "금", "토"];
+  const now = new Date();
+  const todayLabel = `${now.getMonth() + 1}월 ${now.getDate()}일 ${dayNames[now.getDay()]}요일`;
+  const badgeStyle = { TEST: { bg: "#173226", fg: "#f4efe1" }, 등원: { bg: "var(--gold)", fg: "#fffaf2" } };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-5" style={{ background: "#173226" }}>
+        <div className="text-[10px] tracking-[0.3em] mb-3" style={{ color: "var(--gold)" }}>ROUTINE MATH ACADEMY</div>
+        <div className="flex items-center gap-2 flex-wrap mb-2">
+          {editingNick ? (
+            <input autoFocus value={nickDraft} onChange={e => setNickDraft(e.target.value)} onBlur={saveNick} onKeyDown={e => e.key === "Enter" && saveNick()}
+              className="bg-transparent border-b outline-none text-lg font-bold" style={{ color: "#f4efe1", borderColor: "var(--gold)", fontFamily: "'Noto Serif KR', serif", width: 120 }} />
+          ) : (
+            <h3 className="text-lg font-bold" style={{ color: "#f4efe1", fontFamily: "'Noto Serif KR', serif" }}>{data.dashboardNickname || "수학쌤"}님, 오늘도 애쓰셨어요</h3>
+          )}
+          <button onClick={() => { setNickDraft(data.dashboardNickname || "수학쌤"); setEditingNick(true); }} className="text-[11px] px-2.5 py-1 rounded-full" style={{ border: "1px solid rgba(244,239,225,0.35)", color: "rgba(244,239,225,0.75)" }}>닉네임 수정</button>
+        </div>
+        <div className="text-xs" style={{ color: "rgba(244,239,225,0.55)" }}>{todayLabel} · 정규수업일</div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-2xl p-4" style={panel}>
+          <div className="text-xs mb-1" style={{ color: "#7a6f52" }}>오늘 일정</div>
+          <div className="text-3xl font-bold" style={{ color: "#173226", fontFamily: "'Noto Serif KR', serif" }}>{totalCount}</div>
+        </div>
+        <div className="rounded-2xl p-4" style={{ background: "#173226" }}>
+          <div className="text-xs mb-1" style={{ color: "rgba(244,239,225,0.6)" }}>처리 대기</div>
+          <div className="text-3xl font-bold" style={{ color: "var(--gold)", fontFamily: "'Noto Serif KR', serif" }}>{pendingCount}</div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        {["전체", "TEST", "등원"].map(f => (
+          <button key={f} onClick={() => setFilter(f)} className="px-4 py-1.5 rounded-full text-xs font-semibold"
+            style={{ background: filter === f ? "#173226" : "#e9e2cf", color: filter === f ? "#f4efe1" : "#6b6250" }}>{f}</button>
+        ))}
+        <button onClick={() => setShowAdd(v => !v)} className="ml-auto w-7 h-7 rounded-full flex items-center justify-center" style={btnGold}><Plus size={16} /></button>
+      </div>
+
+      {showAdd && (
+        <div className="rounded-2xl p-4 flex flex-col gap-2" style={panel}>
+          <div className="flex gap-2">
+            {["등원", "TEST"].map(t => (
+              <button key={t} onClick={() => setForm({ ...form, type: t })} className="flex-1 py-2 rounded-lg text-xs font-bold"
+                style={{ background: form.type === t ? "var(--gold)" : "#e9e2cf", color: form.type === t ? "#fff" : "#6b6250" }}>{t}</button>
+            ))}
+          </div>
+          <input value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} placeholder="예: 유가중/2학년" className={inputCls} style={inputStyle} />
+          <input value={form.time} onChange={e => setForm({ ...form, time: e.target.value })} placeholder="시간 (예: 17:00, 선택)" className={inputCls} style={inputStyle} />
+          <button onClick={addTask} className="py-2 rounded-lg text-sm font-bold" style={{ background: "var(--coral)", color: "#fff" }}>추가하기</button>
+        </div>
+      )}
+
+      <div className="rounded-2xl overflow-hidden" style={panel}>
+        <div className="text-sm font-bold px-4 pt-4 pb-2" style={{ color: "#173226" }}>📌 오늘 할 일</div>
+        {filtered.length === 0 ? <EmptyState text="해당 항목이 없어요." /> : (
+          filtered.map((t, i) => (
+            <div key={t.id} className="flex items-center gap-2 px-4 py-3" style={{ borderTop: i > 0 ? "1px solid #e4d8ba" : "none", opacity: t.done ? 0.4 : 1 }}>
+              <span onClick={() => toggleDone(t.id)} className="text-[11px] font-bold px-2.5 py-1 rounded-full cursor-pointer" style={{ background: badgeStyle[t.type].bg, color: badgeStyle[t.type].fg }}>{t.type}</span>
+              <span onClick={() => toggleDone(t.id)} className="flex-1 text-sm cursor-pointer" style={{ color: "#2b2417", textDecoration: t.done ? "line-through" : "none" }}>{t.label}</span>
+              {t.time && <span className="text-xs" style={{ color: "#a89d84" }}>오후 {t.time.replace(/^0/, "")}</span>}
+              <button onClick={() => removeTask(t.id)}><X size={13} color="#a89d84" /></button>
+            </div>
+          ))
+        )}
+      </div>
+      <p className="text-[11px] text-center" style={{ color: "#8a7f5e" }}>항목을 탭하면 완료 처리, X를 누르면 삭제됩니다</p>
+    </div>
+  );
+}
+
+// ================= ADMIN: 학생 명부 =================
+function StudentsTab({ data, setData }) {
+  const [form, setForm] = useState({ name: "", grade: "고1", classGroup: "", parentPhone: "" });
+  const [editingId, setEditingId] = useState(null);
+  const reset = () => { setForm({ name: "", grade: "고1", classGroup: "", parentPhone: "" }); setEditingId(null); };
+  const submit = () => {
+    if (!form.name.trim()) return;
+    if (editingId) setData({ ...data, students: data.students.map(s => s.id === editingId ? { ...s, ...form } : s) });
+    else setData({ ...data, students: [...data.students, { id: uid(), ...form }] });
+    reset();
+  };
+  const edit = (s) => { setForm({ name: s.name, grade: s.grade, classGroup: s.classGroup, parentPhone: s.parentPhone || "" }); setEditingId(s.id); };
+  const remove = (id) => setData({
+    ...data,
+    students: data.students.filter(s => s.id !== id),
+    planners: data.planners.filter(p => p.studentId !== id),
+    homeworks: data.homeworks.filter(h => h.studentId !== id),
+    sessions: data.sessions.filter(s => s.studentId !== id),
+    tests: data.tests.filter(t => t.studentId !== id),
+    alerts: data.alerts.filter(a => a.studentId !== id),
+    timetables: data.timetables.filter(t => t.studentId !== id),
+    teacherComments: data.teacherComments.filter(c => c.studentId !== id),
+    counselingNotes: data.counselingNotes.filter(c => c.studentId !== id),
+    attendance: data.attendance.filter(a => a.studentId !== id),
+    requests: data.requests.filter(r => r.studentId !== id),
+    plannerBlocks: data.plannerBlocks.filter(b => b.studentId !== id),
+    routines: data.routines.filter(r => r.studentId !== id),
+  });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>{editingId ? "학생 정보 수정" : "학생 등록"}</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="이름"><input className={inputCls} style={inputStyle} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="예: 김새봄" /></Field>
+          <Field label="학년">
+            <select className={inputCls} style={inputStyle} value={form.grade} onChange={e => setForm({ ...form, grade: e.target.value })}>
+              {GRADES.map(g => <option key={g}>{g}</option>)}
+            </select>
+          </Field>
+          <Field label="반/그룹"><input className={inputCls} style={inputStyle} value={form.classGroup} onChange={e => setForm({ ...form, classGroup: e.target.value })} placeholder="예: 고1-3" /></Field>
+          <Field label="전화번호"><input className={inputCls} style={inputStyle} value={form.parentPhone} onChange={e => setForm({ ...form, parentPhone: e.target.value })} placeholder="010-0000-0000" /></Field>
+        </div>
+        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>학생 앱 로그인은 이 전화번호의 뒷 4자리로 인증됩니다.</p>
+        <div className="flex gap-2">
+          <button onClick={submit} className="px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />{editingId ? "수정 저장" : "학생 추가"}</button>
+          {editingId && <button onClick={reset} className="px-4 py-2 rounded-lg text-sm" style={{ border: "1px solid #ddcda0", color: "#5c543e" }}>취소</button>}
+        </div>
+      </div>
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>학생 명부 ({data.students.length}명)</h3>
+        {data.students.length === 0 ? <EmptyState text="등록된 학생이 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {data.students.map(s => (
+              <li key={s.id} className="flex items-center justify-between p-3 rounded-lg" style={{ background: "#efe6d0" }}>
+                <div className="text-sm" style={{ color: "#4a4332" }}>
+                  <b style={{ color: "#2b2417" }}>{s.name}</b> <span style={{ color: "#7a6f52" }}>· {s.grade}{s.classGroup ? ` · ${s.classGroup}` : ""}</span>
+                  {s.parentPhone && <div className="text-xs" style={{ color: "#7a6f52" }}>연락처: {s.parentPhone}</div>}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => edit(s)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Pencil size={14} color="#5c543e" /></button>
+                  <button onClick={() => remove(s.id)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ================= 플래너 로직 =================
+function applyPlannerEntry(data, setData, patch, id) {
+  const student = data.students.find(s => s.id === patch.studentId);
+  if (!student) return;
+  const rate = patch.planned > 0 ? Math.round((patch.done / patch.planned) * 100) : 0;
+  const finalId = id || uid();
+  const planners = id ? data.planners.map(p => p.id === id ? { ...p, ...patch } : p) : [...data.planners, { id: finalId, ...patch }];
+  const alerts = syncAlerts(data.alerts, `planner:${finalId}`, rate < PASS_RATE, () => ({
+    studentId: patch.studentId, kind: "성취율 미달",
+    message: `[루틴수학] ${student.name} 학생 ${patch.date} 플래너 성취율 ${rate}% 입니다 (계획 ${patch.planned} / 완료 ${patch.done}).`,
+  }));
+  setData({ ...data, planners, alerts });
+}
+
+function syncHomeworkAlert(entry, data) {
+  const student = data.students.find(s => s.id === entry.studentId);
+  return syncAlerts(data.alerts, `homework:${entry.id}`, !entry.submitted, () => ({
+    studentId: entry.studentId, kind: "숙제 미제출",
+    message: `[루틴수학] ${student?.name || ""} 학생 ${entry.date} "${entry.title}" 숙제가 미제출 상태입니다.`,
+  }));
+}
+
+function fileToCompressedDataURL(file, maxWidth = 640, quality = 0.55) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ================= ADMIN: 플래너 / 성취율 =================
+function PlannerTab({ data, setData }) {
+  const [date, setDate] = useState(todayStr());
+  const [studentId, setStudentId] = useState("");
+  const [planned, setPlanned] = useState("");
+  const [done, setDone] = useState("");
+  const [memo, setMemo] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const dayEntries = data.planners.filter(p => p.date === date);
+  const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
+
+  const submit = () => {
+    if (!studentId || planned === "" || done === "") return;
+    applyPlannerEntry(data, setData, { studentId, date, planned: Number(planned), done: Number(done), memo, source: "teacher" }, editingId);
+    setStudentId(""); setPlanned(""); setDone(""); setMemo(""); setEditingId(null);
+  };
+  const edit = (p) => { setStudentId(p.studentId); setPlanned(p.planned); setDone(p.done); setMemo(p.memo || ""); setEditingId(p.id); };
+  const remove = (id) => setData({ ...data, planners: data.planners.filter(p => p.id !== id), alerts: data.alerts.filter(a => a.sourceKey !== `planner:${id}` || a.status !== "대기") });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>플래너 대조 입력</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="날짜"><input type="date" className={inputCls} style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
+          <Field label="학생"><StudentSelect students={data.students} value={studentId} onChange={setStudentId} /></Field>
+          <Field label="계획한 과제 수"><input type="number" min="0" className={inputCls} style={inputStyle} value={planned} onChange={e => setPlanned(e.target.value)} /></Field>
+          <Field label="완료한 과제 수"><input type="number" min="0" className={inputCls} style={inputStyle} value={done} onChange={e => setDone(e.target.value)} /></Field>
+        </div>
+        <Field label="메모 (선택)"><input className={inputCls} style={inputStyle} value={memo} onChange={e => setMemo(e.target.value)} /></Field>
+        <div className="flex gap-2">
+          <button onClick={submit} className="px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />{editingId ? "수정 저장" : "기록 추가"}</button>
+          {editingId && <button onClick={() => { setEditingId(null); setStudentId(""); setPlanned(""); setDone(""); setMemo(""); }} className="px-4 py-2 rounded-lg text-sm" style={{ border: "1px solid #ddcda0", color: "#5c543e" }}>취소</button>}
+        </div>
+        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>성취율이 {PASS_RATE}% 미만이면 학부모 알림에 자동 등록됩니다. 학생이 직접 등록한 기록도 여기 함께 표시됩니다.</p>
+      </div>
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>{date} 기록 ({dayEntries.length}건)</h3>
+        {dayEntries.length === 0 ? <EmptyState text="이 날짜에 기록된 플래너가 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {dayEntries.map(p => {
+              const rate = p.planned > 0 ? Math.round((p.done / p.planned) * 100) : 0;
+              const low = rate < PASS_RATE;
+              return (
+                <li key={p.id} className="flex items-center justify-between p-3 rounded-lg" style={{ background: low ? "#f8e3c9" : "#efe6d0" }}>
+                  <div className="text-sm" style={{ color: "#4a4332" }}>
+                    <b style={{ color: "#2b2417" }}>{studentName(p.studentId)}</b> · 계획 {p.planned} / 완료 {p.done}
+                    <span className="font-bold ml-2" style={{ color: low ? "var(--coral)" : "var(--gold)" }}>{rate}%</span>
+                    {p.source === "student" && <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded-full" style={{ background: "#e4d8ba", color: "#7a6f52" }}>학생 입력</span>}
+                    {p.memo && <div className="text-xs" style={{ color: "#7a6f52" }}>{p.memo}</div>}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => edit(p)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Pencil size={14} color="#5c543e" /></button>
+                    <button onClick={() => remove(p.id)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ================= ADMIN: 숙제 제출 =================
+function HomeworkTab({ data, setData }) {
+  const [date, setDate] = useState(todayStr());
+  const [studentId, setStudentId] = useState("");
+  const [title, setTitle] = useState("");
+  const [openPhoto, setOpenPhoto] = useState(null);
+  const dayEntries = data.homeworks.filter(h => h.date === date);
+  const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
+  const add = () => {
+    if (!studentId || !title.trim()) return;
+    const entry = { id: uid(), studentId, date, title, submitted: false, photo: null, note: "" };
+    setData({ ...data, homeworks: [...data.homeworks, entry], alerts: syncHomeworkAlert(entry, data) });
+    setStudentId(""); setTitle("");
+  };
+  const toggle = (h) => {
+    const updated = { ...h, submitted: !h.submitted };
+    setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? updated : x), alerts: syncHomeworkAlert(updated, data) });
+  };
+  const remove = (id) => setData({ ...data, homeworks: data.homeworks.filter(h => h.id !== id), alerts: data.alerts.filter(a => a.sourceKey !== `homework:${id}` || a.status !== "대기") });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>숙제 등록</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="날짜"><input type="date" className={inputCls} style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
+          <Field label="학생"><StudentSelect students={data.students} value={studentId} onChange={setStudentId} /></Field>
+        </div>
+        <Field label="숙제 내용"><input className={inputCls} style={inputStyle} value={title} onChange={e => setTitle(e.target.value)} placeholder="예: 공통수학2 응용 3-1 ~ 3-4" /></Field>
+        <button onClick={add} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />추가</button>
+      </div>
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>{date} 숙제 현황 ({dayEntries.length}건)</h3>
+        {dayEntries.length === 0 ? <EmptyState text="이 날짜에 등록된 숙제가 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {dayEntries.map(h => (
+              <li key={h.id} className="flex flex-col gap-2 p-3 rounded-lg" style={{ background: h.submitted ? "#efe6d0" : "#f8e3c9" }}>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>{studentName(h.studentId)}</b> · {h.title}</div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => toggle(h)} className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1" style={{ background: h.submitted ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>
+                      {h.submitted ? <Check size={12} /> : <X size={12} />}{h.submitted ? "제출완료" : "미제출"}
+                    </button>
+                    <button onClick={() => remove(h.id)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
+                  </div>
+                </div>
+                {h.photo && (
+                  <div>
+                    <button onClick={() => setOpenPhoto(openPhoto === h.id ? null : h.id)} className="text-xs underline" style={{ color: "var(--gold)" }}>
+                      {openPhoto === h.id ? "질문 사진 접기" : "질문 사진 보기"}
+                    </button>
+                    {openPhoto === h.id && (
+                      <div className="mt-2">
+                        <img src={h.photo} alt="모르는 문제" className="rounded-lg max-w-full" style={{ maxHeight: 260 }} />
+                        {h.note && <p className="text-xs mt-1" style={{ color: "#7a6f52" }}>{h.note}</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ================= ADMIN: 보강·클리닉 =================
+function SessionsTab({ data, setData, scopeClassGroups }) {
+  const [studentId, setStudentId] = useState("");
+  const [type, setType] = useState("보강");
+  const [date, setDate] = useState(todayStr());
+  const [time, setTime] = useState("16:00");
+  const [memo, setMemo] = useState("");
+  const [filter, setFilter] = useState("");
+  const scopedStudents = studentsInScope(data.students, scopeClassGroups);
+  const scopedIds = new Set(scopedStudents.map(s => s.id));
+  const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
+  const syncForSession = (entry, alerts) => {
+    const student = data.students.find(s => s.id === entry.studentId);
+    return syncAlerts(alerts, `session:${entry.id}`, entry.status === "불참", () => ({
+      studentId: entry.studentId, kind: `${entry.type} 불참`,
+      message: `[루틴수학] ${student?.name || ""} 학생이 ${entry.date} ${entry.time} ${entry.type}에 불참했습니다.`,
+    }));
+  };
+  const add = () => {
+    if (!studentId) return;
+    setData({ ...data, sessions: [...data.sessions, { id: uid(), studentId, type, date, time, status: "예정", memo }] });
+    setStudentId(""); setMemo("");
+  };
+  const setStatus = (s, status) => {
+    const updated = { ...s, status };
+    setData({ ...data, sessions: data.sessions.map(x => x.id === s.id ? updated : x), alerts: syncForSession(updated, data.alerts) });
+  };
+  const remove = (id) => setData({ ...data, sessions: data.sessions.filter(s => s.id !== id), alerts: data.alerts.filter(a => a.sourceKey !== `session:${id}` || a.status !== "대기") });
+  const list = data.sessions.filter(s => scopedIds.has(s.studentId) && (!filter || s.studentId === filter)).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  const statusColor = { "예정": "#7a6f52", "완료": "#4c8c5f", "불참": "var(--coral)" };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>보강·클리닉 일정 등록</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="학생"><StudentSelect students={scopedStudents} value={studentId} onChange={setStudentId} /></Field>
+          <Field label="유형">
+            <select className={inputCls} style={inputStyle} value={type} onChange={e => setType(e.target.value)}>
+              <option value="보강">보강</option><option value="클리닉">클리닉</option>
+            </select>
+          </Field>
+          <Field label="날짜"><input type="date" className={inputCls} style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
+          <Field label="시간"><input type="time" className={inputCls} style={inputStyle} value={time} onChange={e => setTime(e.target.value)} /></Field>
+        </div>
+        <Field label="메모 (선택)"><input className={inputCls} style={inputStyle} value={memo} onChange={e => setMemo(e.target.value)} /></Field>
+        <button onClick={add} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />일정 추가</button>
+      </div>
+      <div className="rounded-2xl p-4" style={panel}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>전체 일정 ({list.length}건)</h3>
+          <StudentSelect students={scopedStudents} value={filter} onChange={setFilter} allowAll />
+        </div>
+        {list.length === 0 ? <EmptyState text="등록된 일정이 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {list.map(s => (
+              <li key={s.id} className="flex items-center justify-between p-3 rounded-lg" style={{ background: "#efe6d0" }}>
+                <div className="text-sm" style={{ color: "#4a4332" }}>
+                  <b style={{ color: "#2b2417" }}>{studentName(s.studentId)}</b> · {s.type} · {s.date} {s.time}
+                  {s.memo && <div className="text-xs" style={{ color: "#7a6f52" }}>{s.memo}</div>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <select value={s.status} onChange={e => setStatus(s, e.target.value)} className="text-xs font-semibold rounded-full px-2 py-1 border-0" style={{ color: "#fff", background: statusColor[s.status] }}>
+                    <option value="예정">예정</option><option value="완료">완료</option><option value="불참">불참</option>
+                  </select>
+                  <button onClick={() => remove(s.id)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ================= ADMIN: 테스트 결과 =================
+function TestsTab({ data, setData, scopeClassGroups }) {
+  const [studentId, setStudentId] = useState("");
+  const [name, setName] = useState("");
+  const [testType, setTestType] = useState(TEST_TYPES[0]);
+  const [date, setDate] = useState(todayStr());
+  const [score, setScore] = useState("");
+  const [passLine, setPassLine] = useState("70");
+  const [filter, setFilter] = useState("");
+  const scopedStudents = studentsInScope(data.students, scopeClassGroups);
+  const scopedIds = new Set(scopedStudents.map(s => s.id));
+  const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
+  const add = () => {
+    if (!studentId || !name.trim() || score === "") return;
+    const student = data.students.find(s => s.id === studentId);
+    const entry = { id: uid(), studentId, name, testType, date, score: Number(score), passLine: Number(passLine) };
+    const alerts = syncAlerts(data.alerts, `test:${entry.id}`, entry.score < entry.passLine, () => ({
+      studentId, kind: "테스트 기준미달",
+      message: `[루틴수학] ${student?.name || ""} 학생 [${testType}] "${entry.name}" 결과 ${entry.score}점 (기준 ${entry.passLine}점 미달)입니다.`,
+    }));
+    setData({ ...data, tests: [...data.tests, entry], alerts });
+    setName(""); setScore("");
+  };
+  const remove = (id) => setData({ ...data, tests: data.tests.filter(t => t.id !== id), alerts: data.alerts.filter(a => a.sourceKey !== `test:${id}` || a.status !== "대기") });
+  const list = data.tests.filter(t => scopedIds.has(t.studentId) && (!filter || t.studentId === filter)).sort((a, b) => b.date.localeCompare(a.date));
+  const summaryByType = filter ? TEST_TYPES.map(tp => {
+    const arr = data.tests.filter(t => t.studentId === filter && (t.testType || "일일테스트") === tp);
+    return { tp, count: arr.length, avg: arr.length ? Math.round(arr.reduce((s, t) => s + t.score, 0) / arr.length) : null };
+  }) : null;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>테스트 결과 입력</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="학생"><StudentSelect students={scopedStudents} value={studentId} onChange={setStudentId} /></Field>
+          <Field label="유형">
+            <select className={inputCls} style={inputStyle} value={testType} onChange={e => setTestType(e.target.value)}>
+              {TEST_TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+          </Field>
+          <Field label="날짜"><input type="date" className={inputCls} style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
+          <Field label="시험명"><input className={inputCls} style={inputStyle} value={name} onChange={e => setName(e.target.value)} /></Field>
+          <Field label="점수"><input type="number" className={inputCls} style={inputStyle} value={score} onChange={e => setScore(e.target.value)} /></Field>
+          <Field label="기준 점수"><input type="number" className={inputCls} style={inputStyle} value={passLine} onChange={e => setPassLine(e.target.value)} /></Field>
+        </div>
+        <button onClick={add} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />결과 추가</button>
+      </div>
+      <div className="rounded-2xl p-4" style={panel}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>테스트 기록 ({list.length}건)</h3>
+          <StudentSelect students={scopedStudents} value={filter} onChange={setFilter} allowAll />
+        </div>
+        {summaryByType && (
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            {summaryByType.map(s => (
+              <div key={s.tp} className="rounded-lg p-2" style={{ background: "#efe6d0" }}>
+                <div className="text-[11px]" style={{ color: "#7a6f52" }}>{s.tp} ({s.count}회)</div>
+                <div className="text-sm font-bold" style={{ color: s.avg !== null && s.avg < PASS_RATE ? "var(--coral)" : "var(--gold)" }}>{s.avg === null ? "-" : `평균 ${s.avg}점`}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        {list.length === 0 ? <EmptyState text="등록된 테스트 결과가 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {list.map(t => {
+              const low = t.score < t.passLine;
+              return (
+                <li key={t.id} className="flex items-center justify-between p-3 rounded-lg" style={{ background: low ? "#f8e3c9" : "#efe6d0" }}>
+                  <div className="text-sm" style={{ color: "#4a4332" }}>
+                    <b style={{ color: "#2b2417" }}>{studentName(t.studentId)}</b> · {t.name} · {t.date}
+                    <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded-full" style={{ background: "#e4d8ba", color: "#5c543e" }}>{t.testType || "일일테스트"}</span>
+                    <span className="font-bold ml-2" style={{ color: low ? "var(--coral)" : "var(--gold)" }}>{t.score}점</span>
+                    <span className="text-xs" style={{ color: "#7a6f52" }}> (기준 {t.passLine}점)</span>
+                  </div>
+                  <button onClick={() => remove(t.id)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ================= 오늘의 루틴 =================
+function DailyRoutineTab({ data, setData, scopeClassGroups }) {
+  const [studentId, setStudentId] = useState("");
+  const [date, setDate] = useState(todayStr());
+  const [items, setItems] = useState(ROUTINE_ITEM_DEFS.map(d => ({ ...d, target: d.kind === "number" ? "" : true, result: d.kind === "number" ? "" : false })));
+  const [testName, setTestName] = useState("");
+  const [testScore, setTestScore] = useState("");
+  const [comment, setComment] = useState("");
+  const students = studentsInScope(data.students, scopeClassGroups);
+  const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
+
+  const updateItem = (key, field, value) => setItems(items.map(it => it.key === key ? { ...it, [field]: value } : it));
+
+  const rateOf = (it) => {
+    if (it.kind === "boolean") return it.result ? 100 : 0;
+    const t = Number(it.target), r = Number(it.result);
+    if (!t) return 0;
+    return Math.max(0, Math.min(100, Math.round((r / t) * 100)));
+  };
+
+  const save = () => {
+    if (!studentId) return;
+    const student = data.students.find(s => s.id === studentId);
+    const rates = items.map(rateOf);
+    const score = Math.round(rates.reduce((a, b) => a + b, 0) / rates.length);
+    const routine = { id: uid(), studentId, date, items, testName, testScore: testScore ? Number(testScore) : null, comment, score, createdAt: new Date().toISOString() };
+
+    const message = buildDailyReportText(student, date, items, testName, testScore, comment, score);
+    const alert = { id: uid(), studentId, sourceKey: `routine:${routine.id}`, kind: "오늘의 루틴", message, status: "대기", createdAt: new Date().toISOString() };
+
+    setData({ ...data, routines: [...data.routines, routine], alerts: [...data.alerts, alert] });
+    setTestName(""); setTestScore(""); setComment("");
+    setItems(ROUTINE_ITEM_DEFS.map(d => ({ ...d, target: d.kind === "number" ? "" : true, result: d.kind === "number" ? "" : false })));
+  };
+
+  const mine = data.routines.filter(r => studentsInScope(data.students, scopeClassGroups).some(s => s.id === r.studentId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>오늘의 루틴 입력</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="학생"><StudentSelect students={students} value={studentId} onChange={setStudentId} /></Field>
+          <Field label="날짜"><input type="date" className={inputCls} style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
+        </div>
+        <div className="flex flex-col gap-2">
+          {items.map(it => (
+            <div key={it.key} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+              <span className="text-sm w-16 flex-shrink-0" style={{ color: "#2b2417" }}>{it.label}</span>
+              {it.kind === "number" ? (
+                <>
+                  <input type="number" min="0" className={inputCls} style={inputStyle} placeholder="목표" value={it.target} onChange={e => updateItem(it.key, "target", e.target.value)} />
+                  <span className="text-xs" style={{ color: "#7a6f52" }}>{it.unit}</span>
+                  <input type="number" min="0" className={inputCls} style={inputStyle} placeholder="결과" value={it.result} onChange={e => updateItem(it.key, "result", e.target.value)} />
+                  <span className="text-xs" style={{ color: "#7a6f52" }}>{it.unit}</span>
+                </>
+              ) : (
+                <button onClick={() => updateItem(it.key, "result", !it.result)} className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold"
+                  style={{ background: it.result ? "#4c8c5f" : "#e4d8ba", color: it.result ? "#fff" : "#5c543e" }}>{it.result ? "완료" : "미완료"}</button>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="오늘의 평가 (시험명)"><input className={inputCls} style={inputStyle} value={testName} onChange={e => setTestName(e.target.value)} placeholder="예: 함수 단원 TEST" /></Field>
+          <Field label="점수"><input type="number" className={inputCls} style={inputStyle} value={testScore} onChange={e => setTestScore(e.target.value)} /></Field>
+        </div>
+        <Field label="선생님 코멘트"><textarea rows={2} className={inputCls} style={inputStyle} value={comment} onChange={e => setComment(e.target.value)} placeholder="오늘 개념 이해는 좋았습니다..." /></Field>
+        <button onClick={save} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />저장하고 알림 생성</button>
+        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>저장하면 학부모 알림함(소통)에 항상 대기 알림이 새로 생성돼요. 관리자가 내용을 확인한 뒤 복사해서 직접 발송하는 구조라, 검토 없이 바로 나가지 않아요.</p>
+      </div>
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>최근 기록 ({mine.length})</h3>
+        {mine.length === 0 ? <EmptyState text="등록된 기록이 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {mine.map(r => (
+              <li key={r.id} className="p-3 rounded-lg" style={{ background: "#efe6d0" }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm" style={{ color: "#2b2417" }}><b>{studentName(r.studentId)}</b> · {r.date}</span>
+                  <span className="text-sm font-bold" style={{ color: r.score < PASS_RATE ? "var(--coral)" : "var(--gold)" }}>{r.score}점</span>
+                </div>
+                {r.testName && <div className="text-xs mt-1" style={{ color: "#7a6f52" }}>{r.testName} {r.testScore}점</div>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ================= 주간 루틴 =================
+function buildDailyReportText(student, date, items, testName, testScore, comment, score) {
+  const lines = [];
+  lines.push("🌱 오늘의 ROUTINE");
+  lines.push(`${student?.name || ""} / ${student?.grade || ""}`);
+  lines.push("");
+  lines.push("오늘 할 일 · 목표 · 결과");
+  items.forEach(it => {
+    if (it.kind === "boolean") {
+      lines.push(`${it.label} · 완료 · ${it.result ? "✅" : "❌"}`);
+    } else {
+      lines.push(`${it.label} · ${it.target || 0}${it.unit} · ${it.result || 0}${it.unit}`);
+    }
+  });
+  if (testName) {
+    lines.push("");
+    lines.push("오늘의 평가");
+    lines.push(testName);
+    lines.push(`${testScore}점`);
+  }
+  if (comment) {
+    lines.push("");
+    lines.push("선생님 코멘트");
+    lines.push(comment);
+  }
+  lines.push("");
+  lines.push(`종합 점수 ${score}점`);
+  return lines.join("\n");
+}
+
+function buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg) {
+  const lines = [];
+  lines.push("📊 주간 ROUTINE");
+  lines.push(`${student?.name || ""} / ${student?.grade || ""}`);
+  lines.push("");
+  lines.push("이번 주 목표 100%");
+  lines.push(`실제 달성률 ${overall === null ? "-" : `${overall}%`}`);
+  lines.push("");
+  itemAverages.forEach(it => {
+    lines.push(`${it.label} ${it.avg === null ? "기록없음" : `${it.avg}%`}`);
+  });
+  if (testAvg !== null) lines.push(`테스트 평균 ${testAvg}점`);
+  return lines.join("\n");
+}
+
+function weeklyRoutineStats(data, studentId, weekStart) {
+  const weekRoutines = data.routines.filter(r => r.studentId === studentId && mondayOf(r.date) === weekStart);
+  const perItem = {};
+  ROUTINE_ITEM_DEFS.forEach(def => { perItem[def.key] = []; });
+  weekRoutines.forEach(r => {
+    (r.items || []).forEach(it => {
+      const rate = it.kind === "boolean"
+        ? (it.result ? 100 : 0)
+        : (Number(it.target) ? Math.max(0, Math.min(100, Math.round((Number(it.result) / Number(it.target)) * 100))) : 0);
+      if (perItem[it.key]) perItem[it.key].push(rate);
+    });
+  });
+  const itemAverages = ROUTINE_ITEM_DEFS.map(def => {
+    const arr = perItem[def.key];
+    return { ...def, avg: arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null };
+  });
+  const validAverages = itemAverages.filter(x => x.avg !== null).map(x => x.avg);
+  const overall = validAverages.length ? Math.round(validAverages.reduce((a, b) => a + b, 0) / validAverages.length) : null;
+  const testScores = weekRoutines.filter(r => r.testScore != null).map(r => r.testScore);
+  const testAvg = testScores.length ? Math.round(testScores.reduce((a, b) => a + b, 0) / testScores.length) : null;
+  return { weekRoutines, itemAverages, overall, testAvg };
+}
+
+function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButton }) {
+  const student = data.students.find(s => s.id === studentId);
+  const { weekRoutines, itemAverages, overall, testAvg } = weeklyRoutineStats(data, studentId, weekStart);
+
+  const sendReport = () => {
+    const message = buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg);
+    const alert = { id: uid(), studentId, sourceKey: `weekly:${studentId}:${weekStart}`, kind: "주간 루틴", message, status: "대기", createdAt: new Date().toISOString() };
+    setData({ ...data, alerts: [...data.alerts, alert] });
+  };
+
+  return (
+    <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+      <div>
+        <div className="text-xs" style={{ color: "#7a6f52" }}>이번 주 목표 100%</div>
+        <h3 className="text-2xl font-bold" style={{ color: overall !== null && overall < PASS_RATE ? "var(--coral)" : "var(--gold)", fontFamily: "'Noto Serif KR', serif" }}>
+          실제 달성률 {overall === null ? "-" : `${overall}%`}
+        </h3>
+      </div>
+      {weekRoutines.length === 0 ? <EmptyState text="이번 주 등록된 오늘의 루틴 기록이 없습니다." /> : (
+        <ul className="flex flex-col gap-1.5">
+          {itemAverages.map(it => (
+            <li key={it.key} className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+              <span className="text-sm" style={{ color: "#2b2417" }}>{it.label}</span>
+              <span className="text-sm font-bold" style={{ color: it.avg !== null && it.avg < PASS_RATE ? "var(--coral)" : "var(--gold)" }}>{it.avg === null ? "기록없음" : `${it.avg}%`}</span>
+            </li>
+          ))}
+          {testAvg !== null && (
+            <li className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+              <span className="text-sm" style={{ color: "#2b2417" }}>테스트 평균</span>
+              <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>{testAvg}점</span>
+            </li>
+          )}
+        </ul>
+      )}
+      {showAlertButton && weekRoutines.length > 0 && (
+        <button onClick={sendReport} className="self-start px-4 py-2 rounded-lg text-sm font-semibold" style={btnGold}>이번주 리포트 알림 생성</button>
+      )}
+    </div>
+  );
+}
+
+function WeeklyRoutineTab({ data, setData, scopeClassGroups }) {
+  const [studentId, setStudentId] = useState("");
+  const [weekStart, setWeekStart] = useState(mondayOf(todayStr()));
+  const students = studentsInScope(data.students, scopeClassGroups);
+  const shiftWeek = (days) => {
+    const d = new Date(weekStart + "T00:00:00");
+    d.setDate(d.getDate() + days);
+    setWeekStart(d.toISOString().slice(0, 10));
+  };
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <Field label="학생"><StudentSelect students={students} value={studentId} onChange={setStudentId} /></Field>
+        <div className="flex items-center justify-between">
+          <button onClick={() => shiftWeek(-7)} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: "#efe3c8", color: "#5c543e" }}>← 이전주</button>
+          <span className="text-xs" style={{ color: "#7a6f52" }}>{weekStart} 주</span>
+          <button onClick={() => shiftWeek(7)} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: "#efe3c8", color: "#5c543e" }}>다음주 →</button>
+        </div>
+      </div>
+      {studentId ? <WeeklyRoutineBlock data={data} setData={setData} studentId={studentId} weekStart={weekStart} showAlertButton={true} /> : <EmptyState text="학생을 선택하면 주간 루틴을 볼 수 있습니다." />}
+    </div>
+  );
+}
+
+// ================= ADMIN: 학부모 알림 =================
+function AlertsTab({ data, setData }) {
+  const [copiedId, setCopiedId] = useState(null);
+  const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
+  const studentPhone = (id) => data.students.find(s => s.id === id)?.parentPhone;
+  const markSent = (id) => setData({ ...data, alerts: data.alerts.map(a => a.id === id ? { ...a, status: "발송완료" } : a) });
+  const remove = (id) => setData({ ...data, alerts: data.alerts.filter(a => a.id !== id) });
+  const copy = async (a) => { try { await navigator.clipboard.writeText(a.message); setCopiedId(a.id); setTimeout(() => setCopiedId(null), 1500); } catch (e) {} };
+  const pending = data.alerts.filter(a => a.status === "대기").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const sent = data.alerts.filter(a => a.status === "발송완료").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  const Row = ({ a }) => (
+    <li className="flex flex-col gap-2 p-3 rounded-lg" style={{ background: a.status === "대기" ? "#f8e3c9" : "#efe6d0" }}>
+      <div className="flex items-center justify-between">
+        <div className="text-sm" style={{ color: "#4a4332" }}>
+          <b style={{ color: "#2b2417" }}>{studentName(a.studentId)}</b>
+          <span className="ml-2 text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--coral)", color: "#fff" }}>{a.kind}</span>
+          {studentPhone(a.studentId) && <span className="ml-2 text-xs" style={{ color: "#7a6f52" }}>{studentPhone(a.studentId)}</span>}
+        </div>
+        <div className="flex gap-1.5">
+          <button onClick={() => copy(a)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}>{copiedId === a.id ? <Check size={13} color="#4c8c5f" /> : <Copy size={13} color="#5c543e" />}</button>
+          {a.status === "대기" && <button onClick={() => markSent(a.id)} className="px-2 py-1 rounded-md text-xs font-semibold" style={{ background: "#4c8c5f", color: "#fff" }}>발송완료</button>}
+          <button onClick={() => remove(a.id)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
+        </div>
+      </div>
+      <div className="text-sm whitespace-pre-wrap" style={{ color: "#5c543e" }}>{a.message}</div>
+    </li>
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>발송 대기 ({pending.length})</h3>
+        {pending.length === 0 ? <EmptyState text="대기중인 알림이 없습니다." /> : <ul className="flex flex-col gap-2">{pending.map(a => <Row key={a.id} a={a} />)}</ul>}
+        <p className="text-[11px] mt-3" style={{ color: "#8a7f5e" }}>복사 버튼으로 메시지를 문자·카카오톡에 붙여넣어 보낼 수 있습니다.</p>
+      </div>
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>발송 완료 ({sent.length})</h3>
+        {sent.length === 0 ? <EmptyState text="발송 완료된 알림이 없습니다." /> : <ul className="flex flex-col gap-2">{sent.map(a => <Row key={a.id} a={a} />)}</ul>}
+      </div>
+    </div>
+  );
+}
+
+// ================= ADMIN: 학원 규정 편집 =================
+function RulesTab({ data, setData }) {
+  const [text, setText] = useState(data.rules);
+  const [saved, setSaved] = useState(false);
+  const save = () => { setData({ ...data, rules: text }); setSaved(true); setTimeout(() => setSaved(false), 1500); };
+  return (
+    <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+      <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>학원 규정 편집</h3>
+      <textarea rows={16} className={inputCls} style={{ ...inputStyle, lineHeight: 1.6 }} value={text} onChange={e => setText(e.target.value)} />
+      <button onClick={save} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}>{saved ? <Check size={16} /> : null}{saved ? "저장됨" : "저장"}</button>
+    </div>
+  );
+}
+
+// ================= ADMIN: 교육관 편집 (원장 약력 대신) =================
+function EduPhilosophyTab({ data, setData }) {
+  const [text, setText] = useState(data.eduPhilosophy);
+  const [saved, setSaved] = useState(false);
+  const save = () => { setData({ ...data, eduPhilosophy: text }); setSaved(true); setTimeout(() => setSaved(false), 1500); };
+  return (
+    <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+      <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>교육관 편집</h3>
+      <p className="text-[11px]" style={{ color: "#8a7f5e" }}>학생 앱의 강의실 화면 상단에 표시됩니다.</p>
+      <textarea rows={10} className={inputCls} style={{ ...inputStyle, lineHeight: 1.6 }} value={text} onChange={e => setText(e.target.value)} />
+      <button onClick={save} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}>{saved ? <Check size={16} /> : null}{saved ? "저장됨" : "저장"}</button>
+    </div>
+  );
+}
+
+// ================= ADMIN: 강의 업로드 (강의실 영상 관리) =================
+function VideosTab({ data, setData }) {
+  const [mode, setMode] = useState("link"); // "link" | "file"
+  const [title, setTitle] = useState("");
+  const [url, setUrl] = useState("");
+  const [target, setTarget] = useState("ALL");
+  const [file, setFile] = useState(null);
+  const [fileError, setFileError] = useState("");
+  const [uploading, setUploading] = useState(false);
+
+  const onPickFile = (f) => {
+    setFileError("");
+    if (!f) { setFile(null); return; }
+    if (!f.type.startsWith("video/")) { setFileError("영상 파일만 업로드할 수 있어요."); setFile(null); return; }
+    if (f.size > MAX_VIDEO_FILE_BYTES) {
+      setFileError(`파일이 너무 큽니다 (${(f.size / 1024 / 1024).toFixed(1)}MB). 4MB 이하 영상만 직접 업로드할 수 있어요. 더 큰 영상은 유튜브 등에 올린 뒤 링크로 등록해 주세요.`);
+      setFile(null);
+      return;
+    }
+    setFile(f);
+  };
+
+  const add = async () => {
+    if (!title.trim()) return;
+    if (mode === "link") {
+      if (!url.trim()) return;
+      setData({ ...data, videos: [...data.videos, { id: uid(), title, url, target, type: "link", createdAt: new Date().toISOString() }] });
+      setTitle(""); setUrl("");
+    } else {
+      if (!file) return;
+      setUploading(true);
+      try {
+        const dataUrl = await fileToDataURL(file);
+        setData({ ...data, videos: [...data.videos, { id: uid(), title, url: dataUrl, target, type: "file", createdAt: new Date().toISOString() }] });
+        setTitle(""); setFile(null);
+      } catch (e) {
+        setFileError("파일 처리 중 오류가 발생했습니다.");
+      }
+      setUploading(false);
+    }
+  };
+
+  const remove = (id) => setData({ ...data, videos: data.videos.filter(v => v.id !== id) });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>강의 업로드</h3>
+        <div className="flex gap-2">
+          {[{ id: "link", label: "링크로 등록" }, { id: "file", label: "파일 업로드" }].map(m => (
+            <button key={m.id} onClick={() => { setMode(m.id); setFileError(""); }} className="flex-1 py-2 rounded-lg text-xs font-semibold"
+              style={{ background: mode === m.id ? "var(--gold)" : "#efe6d0", color: mode === m.id ? "#1a1508" : "#6b6250" }}>{m.label}</button>
+          ))}
+        </div>
+        <Field label="제목"><input className={inputCls} style={inputStyle} value={title} onChange={e => setTitle(e.target.value)} placeholder="예: 공통수학2 이차함수 개념정리" /></Field>
+        {mode === "link" ? (
+          <Field label="영상 링크(URL)"><input className={inputCls} style={inputStyle} value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." /></Field>
+        ) : (
+          <Field label="영상 파일 (최대 4MB)">
+            <input type="file" accept="video/*" className={inputCls} style={inputStyle} onChange={e => onPickFile(e.target.files[0])} />
+            {file && <span className="text-[11px]" style={{ color: "#7a6f52" }}>선택됨: {file.name} ({(file.size / 1024 / 1024).toFixed(1)}MB)</span>}
+            {fileError && <span className="text-[11px]" style={{ color: "var(--coral)" }}>{fileError}</span>}
+          </Field>
+        )}
+        <Field label="대상 학년">
+          <select className={inputCls} style={inputStyle} value={target} onChange={e => setTarget(e.target.value)}>
+            <option value="ALL">전체 학생</option>
+            {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+        </Field>
+        <button onClick={add} disabled={uploading} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}>
+          <Plus size={16} />{uploading ? "업로드 중…" : "업로드"}
+        </button>
+        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>파일 업로드는 앱 저장 공간을 함께 쓰므로 용량이 작은 영상(4MB 이하)만 가능해요. 긴 강의 영상은 유튜브 등에 올린 뒤 "링크로 등록"을 이용해 주세요.</p>
+      </div>
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>업로드된 강의 ({data.videos.length})</h3>
+        {data.videos.length === 0 ? <EmptyState text="등록된 강의가 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {data.videos.map(v => (
+              <li key={v.id} className="flex items-center justify-between p-3 rounded-lg" style={{ background: "#efe6d0" }}>
+                <div className="text-sm" style={{ color: "#4a4332" }}>
+                  <b style={{ color: "#2b2417" }}>{v.title}</b>
+                  <div className="text-xs" style={{ color: "#7a6f52" }}>{v.target === "ALL" ? "전체" : v.target} · {v.type === "file" ? "직접 업로드" : "링크"}</div>
+                </div>
+                <button onClick={() => remove(v.id)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ================= ADMIN: 반별 커리큘럼 편집 =================
+function CurriculumTab({ data, setData }) {
+  const [drafts, setDrafts] = useState(data.curricula || {});
+  const [savedGrade, setSavedGrade] = useState(null);
+
+  const update = (grade, text) => setDrafts({ ...drafts, [grade]: text });
+  const save = (grade) => {
+    setData({ ...data, curricula: { ...(data.curricula || {}), [grade]: drafts[grade] || "" } });
+    setSavedGrade(grade);
+    setTimeout(() => setSavedGrade(null), 1500);
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      {GRADES.map(g => (
+        <div key={g} className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+          <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>{g} 커리큘럼</h3>
+          <textarea rows={5} className={inputCls} style={{ ...inputStyle, lineHeight: 1.6 }}
+            value={drafts[g] ?? ""} onChange={e => update(g, e.target.value)}
+            placeholder={`${g} 반 커리큘럼 상세 내용을 적어주세요.`} />
+          <button onClick={() => save(g)} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}>
+            {savedGrade === g ? <Check size={16} /> : null}{savedGrade === g ? "저장됨" : "저장"}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ================= 자습실 시간표 (공용 로직) =================
+function cellStatus(tt, day, period) {
+  return tt?.cells?.[`${day}-${period}`] || "-";
+}
+function upsertTimetableCell(data, setData, studentId, weekStart, day, period, nextStatus, reason) {
+  const existing = data.timetables.find(t => t.studentId === studentId && t.weekStart === weekStart);
+  const key = `${day}-${period}`;
+  if (existing) {
+    const cells = { ...existing.cells, [key]: nextStatus };
+    const reasons = { ...existing.reasons };
+    if (nextStatus === "X" && reason) reasons[key] = reason; else delete reasons[key];
+    setData({ ...data, timetables: data.timetables.map(t => t.id === existing.id ? { ...t, cells, reasons } : t) });
+  } else {
+    const cells = { [key]: nextStatus };
+    const reasons = nextStatus === "X" && reason ? { [key]: reason } : {};
+    setData({ ...data, timetables: [...data.timetables, { id: uid(), studentId, weekStart, cells, reasons }] });
+  }
+}
+function occupancyToday(data, weekStart, day) {
+  const counts = {};
+  PERIODS.forEach(p => { counts[p] = 0; });
+  if (!day) return counts;
+  data.timetables.filter(t => t.weekStart === weekStart).forEach(t => {
+    PERIODS.forEach(p => { if (cellStatus(t, day, p) === "O") counts[p]++; });
+  });
+  return counts;
+}
+
+// 학생: 자습실 시간표 등록 (편집 가능)
+function StudentTimetable({ data, setData, studentId }) {
+  const weekStart = mondayOf(todayStr());
+  const my = data.timetables.find(t => t.studentId === studentId && t.weekStart === weekStart);
+  const today = todayDayLabel();
+
+  const tap = (day, period) => {
+    const cur = cellStatus(my, day, period);
+    if (cur === "-") { upsertTimetableCell(data, setData, studentId, weekStart, day, period, "O"); return; }
+    if (cur === "O") {
+      const reason = window.prompt("결석 사유(선택)", "") || "";
+      upsertTimetableCell(data, setData, studentId, weekStart, day, period, "X", reason);
+      return;
+    }
+    upsertTimetableCell(data, setData, studentId, weekStart, day, period, "-");
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-xs" style={{ color: "#7a6f52" }}>칸을 누르면 이용(○) → 결석(X) → 해당없음(–) 순서로 바뀝니다.</p>
+      <TimetableGrid data={data} studentId={studentId} weekStart={weekStart} today={today} onTap={tap} />
+    </div>
+  );
+}
+
+// 강의실: 시간표 보기 전용 (탭 없이 조회만)
+function ReadOnlyTimetable({ data, studentId }) {
+  const weekStart = mondayOf(todayStr());
+  const today = todayDayLabel();
+  return <TimetableGrid data={data} studentId={studentId} weekStart={weekStart} today={today} onTap={null} />;
+}
+
+function TimetableGrid({ data, studentId, weekStart, today, onTap }) {
+  const my = data.timetables.find(t => t.studentId === studentId && t.weekStart === weekStart);
+  return (
+    <div className="overflow-x-auto rounded-2xl p-3" style={panel}>
+      <table className="w-full text-center text-xs" style={{ color: "#4a4332", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th className="p-2" style={{ color: "#7a6f52" }}>교시</th>
+            {DAYS.map(d => <th key={d} className="p-2" style={{ color: d === today ? "var(--gold)" : "#7a6f52" }}>{d}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {PERIODS.map(p => (
+            <tr key={p}>
+              <td className="p-2" style={{ color: "#7a6f52" }}>{p}교시</td>
+              {DAYS.map(d => {
+                const st = cellStatus(my, d, p);
+                const color = st === "O" ? "#4c8c5f" : st === "X" ? "var(--coral)" : "#cdbb8a";
+                const content = st === "O" ? "○" : st === "X" ? "✕" : "–";
+                return (
+                  <td key={d} className="p-1">
+                    {onTap ? (
+                      <button onClick={() => onTap(d, p)} className="w-8 h-8 rounded-lg font-bold" style={{ background: "#efe6d0", color, border: `1px solid ${st === "-" ? "#ddcda0" : color}` }}>{content}</button>
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg font-bold flex items-center justify-center mx-auto" style={{ background: "#efe6d0", color, border: `1px solid ${st === "-" ? "#ddcda0" : color}` }}>{content}</div>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function dateForDayInWeek(weekStart, day) {
+  const idx = DAYS.indexOf(day);
+  if (idx < 0) return weekStart;
+  const d = new Date(weekStart + "T00:00:00");
+  d.setDate(d.getDate() + idx);
+  return d.toISOString().slice(0, 10);
+}
+
+function minutesBetween(start, end) {
+  if (!start || !end) return 0;
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  let diff = (eh * 60 + em) - (sh * 60 + sm);
+  if (diff < 0) diff += 24 * 60;
+  return diff;
+}
+function formatMinutes(mins) {
+  const h = Math.floor(mins / 60), m = mins % 60;
+  if (h === 0) return `${m}분`;
+  return m === 0 ? `${h}시간` : `${h}시간 ${m}분`;
+}
+
+function SeatStatus({ data }) {
+  const weekStart = mondayOf(todayStr());
+  const todayLabel = todayDayLabel() || "월";
+  const [day, setDay] = useState(todayLabel);
+  const counts = occupancyToday(data, weekStart, day);
+  const resolvedDate = dateForDayInWeek(weekStart, day);
+  return (
+    <div className="rounded-2xl p-4" style={panel}>
+      <h3 className="font-bold mb-1 flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}><Armchair size={18} color="var(--gold)" />자리현황 · 정원 {data.seatCapacity}석</h3>
+      <div className="flex gap-1.5 mb-3 flex-wrap">
+        {DAYS.map(d => (
+          <button key={d} onClick={() => setDay(d)} className="px-2.5 py-1 rounded-full text-xs font-semibold"
+            style={{ background: day === d ? "var(--gold)" : "#efe6d0", color: day === d ? "#1a1508" : "#7a6f52" }}>{d}</button>
+        ))}
+      </div>
+      <p className="text-xs mb-3" style={{ color: "#7a6f52" }}>{resolvedDate} ({day}요일)</p>
+      <div className="grid grid-cols-4 gap-2">
+        {PERIODS.map(p => {
+          const n = counts[p] || 0;
+          const full = n >= data.seatCapacity;
+          return (
+            <div key={p} className="rounded-lg p-2 text-center" style={{ background: "#efe6d0" }}>
+              <div className="text-[10px]" style={{ color: "#7a6f52" }}>{p}교시</div>
+              <div className="text-sm font-bold" style={{ color: full ? "var(--coral)" : "var(--gold)" }}>{n}/{data.seatCapacity}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ================= ADMIN: 자습실 관리 =================
+function SeatsAdminTab({ data, setData }) {
+  const [capacity, setCapacity] = useState(data.seatCapacity);
+  const save = () => setData({ ...data, seatCapacity: Number(capacity) || 0 });
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>좌석 정원 설정</h3>
+        <div className="flex gap-2 items-end">
+          <Field label="정원(석)"><input type="number" className={inputCls} style={inputStyle} value={capacity} onChange={e => setCapacity(e.target.value)} /></Field>
+          <button onClick={save} className="px-4 py-2.5 rounded-lg text-sm font-semibold" style={btnGold}>저장</button>
+        </div>
+      </div>
+      <SeatStatus data={data} />
+    </div>
+  );
+}
+
+// ================= 학생 루틴체크 =================
+function OneLineNotes({ title, icon: Icon, items, canEdit, onAdd, onRemove, accent }) {
+  const [text, setText] = useState("");
+  const list = items.slice().sort((a, b) => b.date.localeCompare(a.date));
+  const add = () => { if (!text.trim()) return; onAdd(text.trim()); setText(""); };
+  return (
+    <div className="rounded-2xl p-4" style={panel}>
+      <h3 className="font-bold mb-3 flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}><Icon size={18} color={accent || "var(--gold)"} />{title}</h3>
+      {canEdit && (
+        <div className="flex gap-2 mb-3">
+          <input className={inputCls} style={inputStyle} value={text} onChange={e => setText(e.target.value)} placeholder="한 줄 메모 입력" />
+          <button onClick={add} className="px-3 py-2 rounded-lg text-sm font-semibold" style={btnGold}><Plus size={16} /></button>
+        </div>
+      )}
+      {list.length === 0 ? <EmptyState text="기록이 없습니다." /> : (
+        <ul className="flex flex-col gap-2">
+          {list.map(n => (
+            <li key={n.id} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
+              <div className="text-sm" style={{ color: "#4a4332" }}><span className="text-xs mr-2" style={{ color: "#7a6f52" }}>{n.date}</span>{n.text}</div>
+              {canEdit && <button onClick={() => onRemove(n.id)} className="p-1 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={12} color="var(--coral)" /></button>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
+  const student = data.students.find(s => s.id === studentId);
+  const homeworks = data.homeworks.filter(h => h.studentId === studentId).sort((a, b) => b.date.localeCompare(a.date));
+  const blockDates = [...new Set(data.plannerBlocks.filter(b => b.studentId === studentId).map(b => b.date))].sort((a, b) => b.localeCompare(a)).slice(0, 7);
+  const tests = data.tests.filter(t => t.studentId === studentId).sort((a, b) => a.date.localeCompare(b.date));
+  const comments = data.teacherComments.filter(c => c.studentId === studentId);
+  const notes = data.counselingNotes.filter(c => c.studentId === studentId);
+
+  const recentHomeworks = homeworks.slice(0, 8);
+  const submittedRate = homeworks.length ? Math.round((homeworks.filter(h => h.submitted).length / homeworks.length) * 100) : null;
+  const dayStats = blockDates.map(d => {
+    const blocks = data.plannerBlocks.filter(b => b.studentId === studentId && b.date === d);
+    const rate = blocks.length ? Math.round((blocks.filter(b => b.done).length / blocks.length) * 100) : 0;
+    const pureMinutes = blocks.filter(b => b.done).reduce((s, b) => s + minutesBetween(b.start, b.end), 0);
+    return { date: d, done: blocks.filter(b => b.done).length, total: blocks.length, rate, pureMinutes };
+  });
+  const avgRate = dayStats.length ? Math.round(dayStats.reduce((s, d) => s + d.rate, 0) / dayStats.length) : null;
+  const totalPureMinutes = dayStats.reduce((s, d) => s + d.pureMinutes, 0);
+  const recentTests = tests.slice(-8);
+  const avgScore = recentTests.length ? Math.round(recentTests.reduce((s, t) => s + t.score, 0) / recentTests.length) : null;
+  const recentRoutines = data.routines.filter(r => r.studentId === studentId).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 7);
+
+  const byType = {};
+  const typeStats = {};
+  TEST_TYPES.forEach(tp => {
+    const all = tests.filter(t => (t.testType || "일일테스트") === tp);
+    byType[tp] = all.slice(-5).reverse();
+    typeStats[tp] = { count: all.length, avg: all.length ? Math.round(all.reduce((s, t) => s + t.score, 0) / all.length) : null };
+  });
+
+  const addComment = (text) => setData({ ...data, teacherComments: [...data.teacherComments, { id: uid(), studentId, date: todayStr(), text }] });
+  const removeComment = (id) => setData({ ...data, teacherComments: data.teacherComments.filter(c => c.id !== id) });
+  const addNote = (text) => setData({ ...data, counselingNotes: [...data.counselingNotes, { id: uid(), studentId, date: todayStr(), text }] });
+  const removeNote = (id) => setData({ ...data, counselingNotes: data.counselingNotes.filter(c => c.id !== id) });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-1" style={{ fontFamily: "'Noto Serif KR', serif" }}>학부모 리포트 요약</h3>
+        <p className="text-xs mb-3" style={{ color: "#7a6f52" }}>{student?.name} 학생 · {student?.grade}{student?.classGroup ? ` · ${student.classGroup}` : ""}</p>
+        <div className="flex gap-3 flex-wrap">
+          <StatCard label="최근 숙제 제출률" value={submittedRate === null ? "-" : `${submittedRate}%`} tone={submittedRate !== null && submittedRate < PASS_RATE ? "var(--coral)" : "var(--gold)"} />
+          <StatCard label="최근 평균 성취율" value={avgRate === null ? "-" : `${avgRate}%`} tone={avgRate !== null && avgRate < PASS_RATE ? "var(--coral)" : "var(--gold)"} />
+          <StatCard label="최근 테스트 평균" value={avgScore === null ? "-" : `${avgScore}점`} />
+          <StatCard label="누적 순수 공부시간" value={formatMinutes(totalPureMinutes)} />
+        </div>
+      </div>
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3 flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}>① 숙제 관리</h3>
+        {recentHomeworks.length === 0 ? <EmptyState text="기록이 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {recentHomeworks.map(h => (
+              <li key={h.id} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
+                <span className="text-sm" style={{ color: "#4a4332" }}>{h.date} · {h.title}</span>
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: h.submitted ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>{h.submitted ? "제출" : "미제출"}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>② 일일 학습량 (플래너 타임테이블)</h3>
+        {dayStats.length === 0 ? <EmptyState text="기록이 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {dayStats.map(d => (
+              <li key={d.date} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
+                <span className="text-xs" style={{ color: "#7a6f52" }}>{d.date}</span>
+                <span className="text-sm" style={{ color: d.rate < PASS_RATE ? "var(--coral)" : "var(--gold)" }}>{formatMinutes(d.pureMinutes)} · {d.done}/{d.total} · {d.rate}%</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>오늘의 루틴 (강사 기록)</h3>
+        {recentRoutines.length === 0 ? <EmptyState text="강사가 입력한 루틴 기록이 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {recentRoutines.map(r => (
+              <li key={r.id} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
+                <span className="text-xs" style={{ color: "#7a6f52" }}>{r.date}</span>
+                <span className="text-sm font-bold" style={{ color: r.score < PASS_RATE ? "var(--coral)" : "var(--gold)" }}>{r.score}점</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <WeeklyRoutineBlock data={data} setData={setData} studentId={studentId} weekStart={mondayOf(todayStr())} showAlertButton={canEdit} />
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>③ 테스트 기록 (누적)</h3>
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          {TEST_TYPES.map(tp => (
+            <div key={tp} className="rounded-lg p-2" style={{ background: "#efe6d0" }}>
+              <div className="text-[11px]" style={{ color: "#7a6f52" }}>{tp} ({typeStats[tp].count}회)</div>
+              <div className="text-sm font-bold" style={{ color: typeStats[tp].avg !== null && typeStats[tp].avg < PASS_RATE ? "var(--coral)" : "var(--gold)" }}>{typeStats[tp].avg === null ? "-" : `평균 ${typeStats[tp].avg}점`}</div>
+            </div>
+          ))}
+        </div>
+        {tests.length === 0 ? <EmptyState text="기록이 없습니다." /> : (
+          <div className="flex flex-col gap-3">
+            {TEST_TYPES.map(tp => (
+              <div key={tp}>
+                <div className="text-xs mb-1" style={{ color: "#7a6f52" }}>{tp}</div>
+                {byType[tp].length === 0 ? (
+                  <p className="text-xs" style={{ color: "#8a7f5e" }}>기록 없음</p>
+                ) : (
+                  <ul className="flex flex-col gap-1.5">
+                    {byType[tp].map(t => (
+                      <li key={t.id} className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+                        <span className="text-sm" style={{ color: "#4a4332" }}>{t.date} · {t.name}</span>
+                        <span className="text-sm font-bold" style={{ color: t.score < t.passLine ? "var(--coral)" : "var(--gold)" }}>{t.score}점</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3 flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}><TrendingUp size={18} color="var(--gold)" />④ 성적 추이</h3>
+        {tests.length < 2 ? <EmptyState text="추이를 보려면 테스트 기록이 2건 이상 필요합니다." /> : (
+          <div style={{ width: "100%", height: 160 }}>
+            <ResponsiveContainer>
+              <LineChart data={tests.map(t => ({ date: t.date.slice(5), score: t.score }))}>
+                <XAxis dataKey="date" tick={{ fill: "#7a6f52", fontSize: 10 }} axisLine={{ stroke: "#e4d8ba" }} tickLine={false} />
+                <YAxis tick={{ fill: "#7a6f52", fontSize: 10 }} axisLine={{ stroke: "#e4d8ba" }} tickLine={false} domain={[0, 100]} />
+                <Tooltip contentStyle={{ background: "#fffcf6", border: "1px solid #e4d8ba", color: "#2b2417" }} />
+                <Line type="monotone" dataKey="score" stroke="#e2822f" strokeWidth={2} dot={{ fill: "#e2822f", r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      <OneLineNotes title="⑤ 선생님 코멘트" icon={MessageSquare} items={comments} canEdit={canEdit} onAdd={addComment} onRemove={removeComment} />
+      <OneLineNotes title="⑦ 상담 기록" icon={ClipboardSignature} items={notes} canEdit={canEdit} onAdd={addNote} onRemove={removeNote} accent="#7a8cc4" />
+    </div>
+  );
+}
+
+// ================= ADMIN: 전체 메뉴 홈 =================
+const COMPONENT_MAP = {
+  students: StudentsTab, planner: PlannerTab, homework: HomeworkTab,
+  sessions: SessionsTab, tests: TestsTab, seats: SeatsAdminTab,
+  videos: VideosTab, routine: AdminRoutineTab, alerts: AlertsTab,
+  rules: RulesTab, attendance: AttendanceTab, teachers: TeachersTab,
+  requests: RequestsTab, dailyRoutine: DailyRoutineTab, weeklyRoutine: WeeklyRoutineTab,
+  eduPhilosophy: EduPhilosophyTab, curriculum: CurriculumTab, today: TodayChecklistTab,
+};
+
+const GROUPS = [
+  { id: "dashboard", label: "대시보드", icon: Home, accent: "#4c8c5f", tabs: [{ id: "dashboard", label: "요약" }, { id: "today", label: "오늘 할 일" }] },
+  { id: "students", label: "학생 관리", icon: Users, accent: "#4c8c5f", tabs: [{ id: "students", label: "학생 명부" }, { id: "routine", label: "루틴체크" }] },
+  { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "planner", label: "플래너·성취율" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }] },
+  { id: "schedule", label: "일정·자습실", icon: CalendarClock, accent: "#e2822f", tabs: [{ id: "sessions", label: "보강·클리닉" }, { id: "seats", label: "자습실 관리" }] },
+  { id: "classroom", label: "강의실", icon: BookOpen, accent: "#c65a1f", tabs: [{ id: "videos", label: "강의 업로드" }, { id: "curriculum", label: "커리큘럼" }, { id: "eduPhilosophy", label: "교육관" }] },
+  { id: "comm", label: "소통", icon: Bell, accent: "#c65a1f", tabs: [{ id: "alerts", label: "학부모 알림" }, { id: "requests", label: "요청함" }] },
+  { id: "staff", label: "강사 관리", icon: GraduationCap, accent: "#7a8cc4", tabs: [{ id: "teachers", label: "강사 계정" }] },
+  { id: "settings", label: "설정", icon: ShieldCheck, accent: "#c47ab0", tabs: [{ id: "rules", label: "학원 규정" }] },
+];
+
+function AdminRoutineTab({ data, setData }) {
+  const [studentId, setStudentId] = useState("");
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4" style={panel}>
+        <Field label="학생 선택"><StudentSelect students={data.students} value={studentId} onChange={setStudentId} /></Field>
+      </div>
+      {studentId ? <StudentRoutineCheck data={data} setData={setData} studentId={studentId} canEdit={true} /> : <EmptyState text="학생을 선택하면 루틴체크 리포트가 표시됩니다." />}
+    </div>
+  );
+}
+
+function AdminHome({ data, onOpen, onExit }) {
+  const pendingAlerts = data.alerts.filter(a => a.status === "대기").length;
+  const pendingRequests = data.requests.filter(r => r.status === "대기").length;
+  const badgeFor = { comm: pendingAlerts + pendingRequests };
+  return (
+    <div className="min-h-screen px-5 py-6" style={{ background: "#f6f1e4" }}>
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-[10px] tracking-[0.3em]" style={{ color: "var(--gold)" }}>ROUTINE MATH ACADEMY</div>
+        <button onClick={onExit} className="text-xs px-3 py-1.5 rounded-lg" style={{ border: "1px solid #ddcda0", color: "#7a6f52" }}>나가기</button>
+      </div>
+      <h1 className="text-xl font-bold mb-5" style={{ fontFamily: "'Noto Serif KR', serif" }}>관리자 홈</h1>
+      <div className="grid grid-cols-2 gap-3">
+        {GROUPS.map(g => {
+          const Icon = g.icon;
+          const badge = badgeFor[g.id];
+          return (
+            <button key={g.id} onClick={() => onOpen(g.id)} className="relative flex flex-col items-start gap-3 p-4 rounded-2xl text-left"
+              style={{ background: "#fffcf6", border: "1px solid #e4d8ba", borderTop: `3px solid ${g.accent}` }}>
+              <Icon size={20} color={g.accent} />
+              <span className="text-sm font-medium" style={{ color: "#2b2417" }}>{g.label}</span>
+              {!!badge && <span className="absolute top-3 right-3 text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center" style={{ background: "var(--coral)", color: "#fff" }}>{badge}</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function AdminPanel({ data, setData, onExit }) {
+  const [openGroup, setOpenGroup] = useState(null);
+  const [subTab, setSubTab] = useState(null);
+  const group = GROUPS.find(g => g.id === openGroup);
+
+  const openGroupById = (id) => {
+    const g = GROUPS.find(x => x.id === id);
+    setOpenGroup(id);
+    setSubTab(g.tabs[0].id);
+  };
+
+  if (!group) return <AdminHome data={data} onOpen={openGroupById} onExit={onExit} />;
+
+  const Comp = COMPONENT_MAP[subTab] || Dashboard;
+
+  return (
+    <div className="min-h-screen px-5 py-6" style={{ background: "#f6f1e4" }}>
+      <BackHeader title={group.label} onBack={() => setOpenGroup(null)} />
+      <div className="max-w-lg mx-auto">
+        {group.tabs.length > 1 && (
+          <div className="flex gap-2 mb-4 flex-wrap">
+            {group.tabs.map(t => {
+              const active = subTab === t.id;
+              return (
+                <button key={t.id} onClick={() => setSubTab(t.id)} className="px-3 py-1.5 rounded-full text-xs font-semibold"
+                  style={{ background: active ? "var(--gold)" : "#fffcf6", color: active ? "#1a1508" : "#7a6f52", border: `1px solid ${active ? "var(--gold)" : "#e4d8ba"}` }}>
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {Comp && <Comp data={data} setData={setData} />}
+      </div>
+    </div>
+  );
+}
+
+// ================= 강사 모드 =================
+function TeacherStudentsTab({ data, setData, teacher }) {
+  const myGroups = teacher.classGroups || [];
+  const [form, setForm] = useState({ name: "", grade: "고1", classGroup: myGroups[0] || "", parentPhone: "" });
+  const scoped = studentsInScope(data.students, myGroups);
+
+  const add = () => {
+    if (!form.name.trim() || !form.classGroup) return;
+    setData({ ...data, students: [...data.students, { id: uid(), ...form }] });
+    setForm({ name: "", grade: "고1", classGroup: myGroups[0] || "", parentPhone: "" });
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>담당반 학생 등록</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="이름"><input className={inputCls} style={inputStyle} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="예: 김새봄" /></Field>
+          <Field label="학년">
+            <select className={inputCls} style={inputStyle} value={form.grade} onChange={e => setForm({ ...form, grade: e.target.value })}>
+              {GRADES.map(g => <option key={g}>{g}</option>)}
+            </select>
+          </Field>
+          <Field label="담당반">
+            <select className={inputCls} style={inputStyle} value={form.classGroup} onChange={e => setForm({ ...form, classGroup: e.target.value })}>
+              {myGroups.length === 0 ? <option value="">담당반 없음</option> : myGroups.map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </Field>
+          <Field label="전화번호"><input className={inputCls} style={inputStyle} value={form.parentPhone} onChange={e => setForm({ ...form, parentPhone: e.target.value })} placeholder="010-0000-0000" /></Field>
+        </div>
+        <button onClick={add} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />학생 추가</button>
+      </div>
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>담당반 학생 ({scoped.length}명)</h3>
+        {scoped.length === 0 ? <EmptyState text="담당반에 등록된 학생이 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {scoped.map(s => (
+              <li key={s.id} className="p-3 rounded-lg" style={{ background: "#efe6d0" }}>
+                <b style={{ color: "#2b2417" }}>{s.name}</b> <span style={{ color: "#7a6f52" }}>· {s.grade} · {s.classGroup}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 반별 출석 인정 기준 시각 편집 (반마다 다른 시간 지정 가능, 없으면 기본값 적용)
+function AttendanceCutoffEditor({ data, setData, groups }) {
+  const [drafts, setDrafts] = useState({ ...(data.attendanceCutoffTimes || {}) });
+  const [defaultDraft, setDefaultDraft] = useState(data.attendanceCutoffDefault || "16:00");
+  const [savedKey, setSavedKey] = useState(null);
+
+  const saveGroup = (g) => {
+    setData({ ...data, attendanceCutoffTimes: { ...(data.attendanceCutoffTimes || {}), [g]: drafts[g] } });
+    setSavedKey(g);
+    setTimeout(() => setSavedKey(null), 1500);
+  };
+  const saveDefault = () => {
+    setData({ ...data, attendanceCutoffDefault: defaultDraft });
+    setSavedKey("__default__");
+    setTimeout(() => setSavedKey(null), 1500);
+  };
+
+  return (
+    <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+      <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>출석 인정 기준 시각 (반별)</h3>
+      <p className="text-[11px]" style={{ color: "#8a7f5e" }}>학생이 앱에서 "출석하기"를 누를 때, 자기 반에 설정된 기준 시각 이전이면 출석 · 이후면 지각으로 자동 기록돼요. 반이 없거나 아래 목록에 없는 반은 기본 기준 시각이 적용됩니다.</p>
+      <div className="flex gap-2 items-end">
+        <Field label="기본 기준 시각"><input type="time" className={inputCls} style={inputStyle} value={defaultDraft} onChange={e => setDefaultDraft(e.target.value)} /></Field>
+        <button onClick={saveDefault} className="px-4 py-2.5 rounded-lg text-sm font-semibold" style={btnGold}>{savedKey === "__default__" ? "저장됨" : "저장"}</button>
+      </div>
+      {groups.length === 0 ? (
+        <p className="text-xs" style={{ color: "#8a7f5e" }}>등록된 반이 없습니다. 학생 등록 시 "반/그룹"을 입력하면 여기에 나타나요.</p>
+      ) : groups.map(g => (
+        <div key={g} className="flex gap-2 items-end">
+          <Field label={g}>
+            <input type="time" className={inputCls} style={inputStyle}
+              value={drafts[g] ?? data.attendanceCutoffDefault ?? "16:00"}
+              onChange={e => setDrafts({ ...drafts, [g]: e.target.value })} />
+          </Field>
+          <button onClick={() => saveGroup(g)} className="px-4 py-2.5 rounded-lg text-sm font-semibold" style={btnGold}>{savedKey === g ? "저장됨" : "저장"}</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AttendanceTab({ data, setData, scopeClassGroups }) {
+  const [date, setDate] = useState(todayStr());
+  const students = studentsInScope(data.students, scopeClassGroups);
+  const groups = [...new Set(students.map(s => s.classGroup).filter(Boolean))].sort();
+  const entryFor = (studentId) => data.attendance.find(a => a.studentId === studentId && a.date === date);
+
+  const setStatus = (studentId, status) => {
+    const existing = entryFor(studentId);
+    const student = data.students.find(s => s.id === studentId);
+    let attendance;
+    if (existing) attendance = data.attendance.map(a => a.id === existing.id ? { ...a, status } : a);
+    else attendance = [...data.attendance, { id: uid(), studentId, date, status }];
+    const alerts = syncAlerts(data.alerts, `attendance:${studentId}:${date}`, status === "결석", () => ({
+      studentId, kind: "결석",
+      message: `[루틴수학] ${student?.name || ""} 학생이 ${date} 결석 처리되었습니다.`,
+    }));
+    setData({ ...data, attendance, alerts });
+  };
+
+  const statusColor = { "출석": "#4c8c5f", "지각": "var(--gold)", "결석": "var(--coral)" };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4" style={panel}>
+        <Field label="날짜"><input type="date" className={inputCls} style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
+      </div>
+      <AttendanceCutoffEditor data={data} setData={setData} groups={groups} />
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>{date} 출결 ({students.length}명)</h3>
+        {students.length === 0 ? <EmptyState text="학생이 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {students.map(s => {
+              const entry = entryFor(s.id);
+              const cur = entry?.status;
+              return (
+                <li key={s.id} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
+                  <div className="text-sm" style={{ color: "#2b2417" }}>
+                    {s.name}
+                    {entry?.time && <span className="text-xs ml-2" style={{ color: "#7a6f52" }}>{entry.time} 도착{entry.source === "student" ? " · 학생 직접 체크인" : ""}</span>}
+                  </div>
+                  <div className="flex gap-1.5">
+                    {ATT_STATUSES.map(st => (
+                      <button key={st} onClick={() => setStatus(s.id, st)} className="px-2.5 py-1 rounded-full text-xs font-semibold"
+                        style={{ background: cur === st ? statusColor[st] : "#e4d8ba", color: cur === st ? "#fff" : "#5c543e" }}>{st}</button>
+                    ))}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TeacherCommentsTab({ data, setData, scopeClassGroups }) {
+  const [studentId, setStudentId] = useState("");
+  const students = studentsInScope(data.students, scopeClassGroups);
+  const comments = data.teacherComments.filter(c => c.studentId === studentId);
+  const addComment = (text) => setData({ ...data, teacherComments: [...data.teacherComments, { id: uid(), studentId, date: todayStr(), text }] });
+  const removeComment = (id) => setData({ ...data, teacherComments: data.teacherComments.filter(c => c.id !== id) });
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4" style={panel}>
+        <Field label="학생 선택"><StudentSelect students={students} value={studentId} onChange={setStudentId} /></Field>
+      </div>
+      {studentId ? (
+        <OneLineNotes title="선생님 코멘트" icon={MessageSquare} items={comments} canEdit={true} onAdd={addComment} onRemove={removeComment} />
+      ) : <EmptyState text="학생을 선택하면 코멘트를 입력할 수 있습니다." />}
+    </div>
+  );
+}
+
+// ================= 결석·보강·클리닉 요청 =================
+const REQUEST_TYPES = [
+  { id: "결석", label: "결석 신고", icon: Calendar },
+  { id: "보강변경", label: "보강 시간 변경", icon: Repeat },
+  { id: "클리닉변경", label: "클리닉 시간 변경", icon: FlaskConical },
+];
+const reqStatusColor = { "대기": "#7a6f52", "승인": "#4c8c5f", "거절": "var(--coral)" };
+
+function RequestForm({ type, studentId, onSubmit, onCancel }) {
+  const [targetDate, setTargetDate] = useState("");
+  const [desiredDate, setDesiredDate] = useState("");
+  const [desiredTime, setDesiredTime] = useState("");
+  const [reason, setReason] = useState("");
+  const needsDesired = type !== "결석";
+  const submit = () => {
+    if (!targetDate || !reason.trim()) return;
+    if (needsDesired && (!desiredDate || !desiredTime)) return;
+    onSubmit({ id: uid(), studentId, type, targetDate, desiredDate, desiredTime, reason, status: "대기", createdAt: new Date().toISOString(), adminNote: "" });
+  };
+  return (
+    <div className="flex flex-col gap-3 p-4 rounded-2xl" style={panel}>
+      <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>{REQUEST_TYPES.find(t => t.id === type)?.label}</h3>
+      <div>
+        <label className="text-xs" style={{ color: "#7a6f52" }}>{type === "결석" ? "결석 날짜" : "기존 일정 날짜"}</label>
+        <input type="date" className={inputCls} style={{ ...inputStyle, marginTop: 4 }} value={targetDate} onChange={e => setTargetDate(e.target.value)} />
+      </div>
+      {needsDesired && (
+        <div className="grid grid-cols-2 gap-2">
+          <div><label className="text-xs" style={{ color: "#7a6f52" }}>희망 날짜</label><input type="date" className={inputCls} style={{ ...inputStyle, marginTop: 4 }} value={desiredDate} onChange={e => setDesiredDate(e.target.value)} /></div>
+          <div><label className="text-xs" style={{ color: "#7a6f52" }}>희망 시간</label><input type="time" className={inputCls} style={{ ...inputStyle, marginTop: 4 }} value={desiredTime} onChange={e => setDesiredTime(e.target.value)} /></div>
+        </div>
+      )}
+      <div><label className="text-xs" style={{ color: "#7a6f52" }}>사유</label><textarea rows={3} className={inputCls} style={{ ...inputStyle, marginTop: 4 }} value={reason} onChange={e => setReason(e.target.value)} /></div>
+      <div className="flex gap-2">
+        <button onClick={submit} className="px-4 py-2 rounded-lg text-sm font-semibold" style={btnGold}>제출</button>
+        <button onClick={onCancel} className="px-4 py-2 rounded-lg text-sm" style={{ border: "1px solid #ddcda0", color: "#5c543e" }}>취소</button>
+      </div>
+      <p className="text-[11px]" style={{ color: "#8a7f5e" }}>제출하면 관리자에게 바로 전달되어 확인 후 승인/거절됩니다.</p>
+    </div>
+  );
+}
+
+function TeacherRequestsTab({ data, setData, scopeClassGroups }) {
+  const [studentId, setStudentId] = useState("");
+  const [formType, setFormType] = useState(null);
+  const students = studentsInScope(data.students, scopeClassGroups);
+  const scopedIds = new Set(students.map(s => s.id));
+  const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
+  const mine = data.requests.filter(r => scopedIds.has(r.studentId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  const submit = (req) => { setData({ ...data, requests: [...data.requests, req] }); setFormType(null); setStudentId(""); };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>결석·보강·클리닉 신고</h3>
+        <Field label="학생 선택"><StudentSelect students={students} value={studentId} onChange={setStudentId} /></Field>
+        {studentId && !formType && (
+          <div className="grid grid-cols-3 gap-2">
+            {REQUEST_TYPES.map(t => {
+              const Icon = t.icon;
+              return (
+                <button key={t.id} onClick={() => setFormType(t.id)} className="flex flex-col items-center gap-2 p-3 rounded-xl" style={{ background: "#efe6d0" }}>
+                  <Icon size={18} color="var(--gold)" />
+                  <span className="text-xs text-center" style={{ color: "#4a4332" }}>{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {studentId && formType && <RequestForm type={formType} studentId={studentId} onSubmit={submit} onCancel={() => setFormType(null)} />}
+      </div>
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>제출 내역 ({mine.length})</h3>
+        {mine.length === 0 ? <EmptyState text="제출한 요청이 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {mine.map(r => (
+              <li key={r.id} className="p-3 rounded-xl text-sm" style={{ background: "#efe6d0" }}>
+                <div className="flex items-center justify-between">
+                  <span style={{ color: "#2b2417" }}>{studentName(r.studentId)} · {REQUEST_TYPES.find(t => t.id === r.type)?.label}</span>
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: reqStatusColor[r.status], color: "#f6f1e4" }}>{r.status}</span>
+                </div>
+                <div className="text-xs mt-1" style={{ color: "#7a6f52" }}>{r.type === "결석" ? `결석일: ${r.targetDate}` : `${r.targetDate} → 희망 ${r.desiredDate} ${r.desiredTime}`}</div>
+                {r.adminNote && <div className="text-xs mt-1" style={{ color: "var(--gold)" }}>관리자: {r.adminNote}</div>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ================= ADMIN: 요청함 =================
+function RequestsTab({ data, setData }) {
+  const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
+  const respond = (r, status) => {
+    const note = status === "거절" ? (window.prompt("거절 사유(선택)", "") || "") : "";
+    setData({ ...data, requests: data.requests.map(x => x.id === r.id ? { ...x, status, adminNote: note } : x) });
+  };
+  const pending = data.requests.filter(r => r.status === "대기").sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const handled = data.requests.filter(r => r.status !== "대기").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  const Row = ({ r }) => (
+    <li className="p-3 rounded-xl" style={{ background: "#efe6d0" }}>
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold" style={{ color: "#2b2417" }}>{studentName(r.studentId)} · {REQUEST_TYPES.find(t => t.id === r.type)?.label}</span>
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: reqStatusColor[r.status], color: "#f6f1e4" }}>{r.status}</span>
+      </div>
+      <div className="text-xs mt-1" style={{ color: "#7a6f52" }}>{r.type === "결석" ? `결석일: ${r.targetDate}` : `${r.targetDate} → 희망 ${r.desiredDate} ${r.desiredTime}`}</div>
+      <div className="text-xs mt-1" style={{ color: "#5c543e" }}>사유: {r.reason}</div>
+      {r.status === "대기" && (
+        <div className="flex gap-2 mt-2">
+          <button onClick={() => respond(r, "승인")} className="px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1" style={{ background: "#4c8c5f", color: "#fff" }}><Check size={12} />승인</button>
+          <button onClick={() => respond(r, "거절")} className="px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1" style={{ background: "var(--coral)", color: "#fff" }}><X size={12} />거절</button>
+        </div>
+      )}
+      {r.adminNote && <div className="text-xs mt-1" style={{ color: "var(--gold)" }}>메모: {r.adminNote}</div>}
+    </li>
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>대기중 요청 ({pending.length})</h3>
+        {pending.length === 0 ? <EmptyState text="대기중인 요청이 없습니다." /> : <ul className="flex flex-col gap-2">{pending.map(r => <Row key={r.id} r={r} />)}</ul>}
+        <p className="text-[11px] mt-3" style={{ color: "#8a7f5e" }}>보강·클리닉 변경을 승인했다면 '보강·클리닉' 탭에서 실제 일정도 함께 수정해 주세요.</p>
+      </div>
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>처리 완료 ({handled.length})</h3>
+        {handled.length === 0 ? <EmptyState text="처리된 요청이 없습니다." /> : <ul className="flex flex-col gap-2">{handled.map(r => <Row key={r.id} r={r} />)}</ul>}
+      </div>
+    </div>
+  );
+}
+
+function TeacherCommTab({ data, setData }) {
+  const [sub, setSub] = useState("alerts");
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex gap-2">
+        {[{ id: "alerts", label: "학부모 알림" }, { id: "requests", label: "요청함" }].map(s => {
+          const active = sub === s.id;
+          return (
+            <button key={s.id} onClick={() => setSub(s.id)} className="px-3 py-1.5 rounded-full text-xs font-semibold"
+              style={{ background: active ? "var(--gold)" : "#efe3c8", color: active ? "#1a1508" : "#5c543e" }}>{s.label}</button>
+          );
+        })}
+      </div>
+      {sub === "alerts" && <AlertsTab data={data} setData={setData} />}
+      {sub === "requests" && <RequestsTab data={data} setData={setData} />}
+    </div>
+  );
+}
+
+function TeacherTodayTab({ data, scopeClassGroups }) {
+  const [date, setDate] = useState(todayStr());
+  const students = studentsInScope(data.students, scopeClassGroups);
+  const groups = {};
+  students.forEach(s => { const g = s.classGroup || "미배정"; (groups[g] = groups[g] || []).push(s); });
+  const groupNames = Object.keys(groups).sort();
+
+  const testFor = (id) => data.tests.filter(t => t.studentId === id && t.date === date);
+  const homeworkFor = (id) => data.homeworks.filter(h => h.studentId === id && h.date === date);
+  const attendanceFor = (id) => data.attendance.find(a => a.studentId === id && a.date === date);
+
+  const attColor = { "출석": "#4c8c5f", "지각": "var(--gold)", "결석": "var(--coral)" };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4" style={panel}>
+        <Field label="날짜"><input type="date" className={inputCls} style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
+      </div>
+      {groupNames.length === 0 ? <EmptyState text="담당반에 등록된 학생이 없습니다." /> : (
+        groupNames.map(g => (
+          <div key={g} className="rounded-2xl p-4" style={panel}>
+            <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>{g} ({groups[g].length}명)</h3>
+            <ul className="flex flex-col gap-2">
+              {groups[g].map(s => {
+                const tests = testFor(s.id);
+                const hws = homeworkFor(s.id);
+                const att = attendanceFor(s.id);
+                return (
+                  <li key={s.id} className="p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-semibold" style={{ color: "#2b2417" }}>{s.name}</span>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: att ? attColor[att.status] : "#e4d8ba", color: att ? "#fff" : "#5c543e" }}>
+                        {att ? att.status : "미기록"}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 text-xs" style={{ color: "#7a6f52" }}>
+                      {tests.length === 0 ? <span>테스트 없음</span> : tests.map(t => (
+                        <span key={t.id} className="px-2 py-0.5 rounded-full" style={{ background: t.score < t.passLine ? "#f8e3c9" : "#e4d8ba", color: t.score < t.passLine ? "var(--coral)" : "#5c543e" }}>{t.name} {t.score}점</span>
+                      ))}
+                      {hws.length === 0 ? <span>숙제 없음</span> : hws.map(h => (
+                        <span key={h.id} className="px-2 py-0.5 rounded-full" style={{ background: h.submitted ? "#e4d8ba" : "#f8e3c9", color: h.submitted ? "#5c543e" : "var(--coral)" }}>{h.title} · {h.submitted ? "제출" : "미제출"}</span>
+                      ))}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+const TEACHER_TABS = [
+  { id: "today", label: "오늘 현황", icon: Home },
+  { id: "routine", label: "오늘의 루틴", icon: ClipboardList },
+  { id: "weeklyRoutine", label: "주간 루틴", icon: TrendingUp },
+  { id: "students", label: "학생등록", icon: Users },
+  { id: "tests", label: "테스트기록", icon: ClipboardCheck },
+  { id: "sessions", label: "보강·클리닉", icon: CalendarClock },
+  { id: "attendance", label: "출결기록", icon: ClipboardSignature },
+  { id: "comments", label: "코멘트", icon: MessageSquare },
+  { id: "requests", label: "결석·보강", icon: Calendar },
+  { id: "comm", label: "소통", icon: Bell },
+];
+
+function TeacherHome({ data, setData, teacher, onLogout }) {
+  const [tab, setTab] = useState("today");
+  const pendingAlerts = data.alerts.filter(a => a.status === "대기").length;
+  const pendingRequests = data.requests.filter(r => r.status === "대기").length;
+  const commBadge = pendingAlerts + pendingRequests;
+  return (
+    <div className="min-h-screen px-5 py-6" style={{ background: "#f6f1e4" }}>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <div className="text-xs" style={{ color: "var(--gold)" }}>루틴수학학원 · 강사 모드</div>
+          <h2 className="text-lg font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>{teacher.name} 선생님</h2>
+          <div className="text-xs" style={{ color: "#7a6f52" }}>담당반: {(teacher.classGroups || []).join(", ") || "없음"}</div>
+        </div>
+        <button onClick={onLogout} className="p-2 rounded-lg" style={{ border: "1px solid #ddcda0" }}><LogOut size={16} color="#7a6f52" /></button>
+      </div>
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {TEACHER_TABS.map(t => {
+          const Icon = t.icon; const active = tab === t.id;
+          const badge = t.id === "comm" ? commBadge : 0;
+          return (
+            <button key={t.id} onClick={() => setTab(t.id)} className="relative flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl min-w-[70px]"
+              style={{ background: active ? "#efe3c8" : "transparent", border: `1px solid ${active ? "var(--gold)" : "#e4d8ba"}` }}>
+              <Icon size={16} color={active ? "var(--gold)" : "#7a6f52"} />
+              <span className="text-[11px]" style={{ color: active ? "var(--gold)" : "#7a6f52" }}>{t.label}</span>
+              {!!badge && <span className="absolute -top-1 -right-1 text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center" style={{ background: "var(--coral)", color: "#fff" }}>{badge}</span>}
+            </button>
+          );
+        })}
+      </div>
+      {tab === "today" && <TeacherTodayTab data={data} scopeClassGroups={teacher.classGroups} />}
+      {tab === "routine" && <DailyRoutineTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
+      {tab === "weeklyRoutine" && <WeeklyRoutineTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
+      {tab === "students" && <TeacherStudentsTab data={data} setData={setData} teacher={teacher} />}
+      {tab === "tests" && <TestsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
+      {tab === "sessions" && <SessionsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
+      {tab === "attendance" && <AttendanceTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
+      {tab === "comments" && <TeacherCommentsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
+      {tab === "requests" && <TeacherRequestsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
+      {tab === "comm" && <TeacherCommTab data={data} setData={setData} />}
+    </div>
+  );
+}
+
+function TeacherLoginCard({ data, onLogin, onBack }) {
+  const [name, setName] = useState("");
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+  const submit = () => {
+    const m = data.teachers.find(t => t.name.trim() === name.trim() && t.pin === pin);
+    if (!m) { setError("일치하는 강사 정보가 없습니다."); return; }
+    setError(""); onLogin(m.id);
+  };
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center px-6" style={{ background: "#f6f1e4" }}>
+      <div className="text-center mb-8">
+        <div className="text-xs tracking-[0.3em]" style={{ color: "var(--gold)" }}>ROUTINE MATH ACADEMY</div>
+        <h1 className="text-2xl font-bold mt-2" style={{ fontFamily: "'Noto Serif KR', serif" }}>강사 로그인</h1>
+        <p className="text-xs mt-1" style={{ color: "#7a6f52" }}>담당반 관리</p>
+      </div>
+      <div className="w-full max-w-xs flex flex-col gap-4 p-5 rounded-2xl" style={panel}>
+        <div>
+          <label className="text-xs" style={{ color: "#7a6f52" }}>이름</label>
+          <input className={inputCls} style={{ ...inputStyle, marginTop: 6 }} value={name} onChange={e => setName(e.target.value)} placeholder="예: 이우영" />
+        </div>
+        <div>
+          <label className="text-xs" style={{ color: "#7a6f52" }}>강사 PIN (4자리)</label>
+          <div className="mt-2"><PinBoxes value={pin} onChange={setPin} /></div>
+        </div>
+        {error && <p className="text-xs" style={{ color: "var(--coral)" }}>{error}</p>}
+        <button onClick={submit} className="w-full py-2.5 rounded-lg text-sm font-semibold" style={btnGold}>입장하기</button>
+      </div>
+      <button onClick={onBack} className="mt-8 text-xs" style={{ color: "#8a7f5e" }}>처음으로</button>
+    </div>
+  );
+}
+
+// ================= ADMIN: 강사 계정 관리 =================
+function TeachersTab({ data, setData }) {
+  const [form, setForm] = useState({ name: "", pin: "", classGroups: "" });
+  const [editingId, setEditingId] = useState(null);
+  const reset = () => { setForm({ name: "", pin: "", classGroups: "" }); setEditingId(null); };
+  const submit = () => {
+    if (!form.name.trim() || form.pin.length !== 4) return;
+    const classGroups = form.classGroups.split(",").map(s => s.trim()).filter(Boolean);
+    if (editingId) setData({ ...data, teachers: data.teachers.map(t => t.id === editingId ? { ...t, name: form.name, pin: form.pin, classGroups } : t) });
+    else setData({ ...data, teachers: [...data.teachers, { id: uid(), name: form.name, pin: form.pin, classGroups }] });
+    reset();
+  };
+  const edit = (t) => { setForm({ name: t.name, pin: t.pin, classGroups: (t.classGroups || []).join(", ") }); setEditingId(t.id); };
+  const remove = (id) => setData({ ...data, teachers: data.teachers.filter(t => t.id !== id) });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>{editingId ? "강사 정보 수정" : "강사 등록"}</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="이름"><input className={inputCls} style={inputStyle} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="예: 이우영" /></Field>
+          <Field label="PIN (4자리)"><input className={inputCls} style={inputStyle} value={form.pin} maxLength={4} onChange={e => setForm({ ...form, pin: e.target.value.replace(/\D/g, "") })} /></Field>
+        </div>
+        <Field label="담당반 (쉼표로 구분)"><input className={inputCls} style={inputStyle} value={form.classGroups} onChange={e => setForm({ ...form, classGroups: e.target.value })} placeholder="예: 고1-3, 고1-4" /></Field>
+        <div className="flex gap-2">
+          <button onClick={submit} className="px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />{editingId ? "수정 저장" : "강사 추가"}</button>
+          {editingId && <button onClick={reset} className="px-4 py-2 rounded-lg text-sm" style={{ border: "1px solid #ddcda0", color: "#5c543e" }}>취소</button>}
+        </div>
+      </div>
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>강사 명단 ({data.teachers.length}명)</h3>
+        {data.teachers.length === 0 ? <EmptyState text="등록된 강사가 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {data.teachers.map(t => (
+              <li key={t.id} className="flex items-center justify-between p-3 rounded-lg" style={{ background: "#efe6d0" }}>
+                <div className="text-sm"><b style={{ color: "#2b2417" }}>{t.name}</b> <span style={{ color: "#7a6f52" }}>· 담당반: {(t.classGroups || []).join(", ") || "없음"}</span></div>
+                <div className="flex gap-2">
+                  <button onClick={() => edit(t)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Pencil size={14} color="#5c543e" /></button>
+                  <button onClick={() => remove(t.id)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ================= 학생 모드 =================
+function StudentPlannerTimetable({ data, setData, studentId }) {
+  const [date, setDate] = useState(todayStr());
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [subject, setSubject] = useState("");
+
+  const dayBlocks = data.plannerBlocks.filter(b => b.studentId === studentId && b.date === date).sort((a, b) => a.start.localeCompare(b.start));
+  const recentDates = [...new Set(data.plannerBlocks.filter(b => b.studentId === studentId).map(b => b.date))].sort((a, b) => b.localeCompare(a)).slice(0, 7);
+  const todayPureMinutes = dayBlocks.filter(b => b.done).reduce((s, b) => s + minutesBetween(b.start, b.end), 0);
+
+  const add = () => {
+    if (!start || !end || !subject.trim()) return;
+    setData({ ...data, plannerBlocks: [...data.plannerBlocks, { id: uid(), studentId, date, start, end, subject, done: false }] });
+    setStart(""); setEnd(""); setSubject("");
+  };
+  const toggleDone = (b) => setData({ ...data, plannerBlocks: data.plannerBlocks.map(x => x.id === b.id ? { ...x, done: !x.done } : x) });
+  const remove = (id) => setData({ ...data, plannerBlocks: data.plannerBlocks.filter(b => b.id !== id) });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>플래너 타임테이블</h3>
+        <Field label="날짜"><input type="date" className={inputCls} style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="시작 시간 (10분 단위)"><input type="time" step="600" className={inputCls} style={inputStyle} value={start} onChange={e => setStart(e.target.value)} /></Field>
+          <Field label="종료 시간 (10분 단위)"><input type="time" step="600" className={inputCls} style={inputStyle} value={end} onChange={e => setEnd(e.target.value)} /></Field>
+        </div>
+        {start && end && <p className="text-xs" style={{ color: "#7a6f52" }}>이 블록: {formatMinutes(minutesBetween(start, end))}</p>}
+        <Field label="학습 내용"><input className={inputCls} style={inputStyle} value={subject} onChange={e => setSubject(e.target.value)} placeholder="예: 공통수학2 응용 3-1 ~ 3-4" /></Field>
+        <button onClick={add} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />시간표에 추가</button>
+        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>시간은 10분 단위로 선택돼요. '완료'로 체크한 블록만 순수 공부시간에 반영됩니다.</p>
+      </div>
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>{date} 시간표 ({dayBlocks.length}건)</h3>
+          <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>순수 공부시간 {formatMinutes(todayPureMinutes)}</span>
+        </div>
+        {dayBlocks.length === 0 ? <EmptyState text="등록된 시간표가 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {dayBlocks.map(b => (
+              <li key={b.id} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: b.done ? "#efe6d0" : "#f8e3c9" }}>
+                <div className="text-sm" style={{ color: "#2b2417" }}>
+                  <span className="text-xs mr-2" style={{ color: "#7a6f52" }}>{b.start}–{b.end} ({formatMinutes(minutesBetween(b.start, b.end))})</span>{b.subject}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => toggleDone(b)} className="px-2.5 py-1 rounded-full text-xs font-semibold" style={{ background: b.done ? "#4c8c5f" : "#e4d8ba", color: b.done ? "#fff" : "#5c543e" }}>{b.done ? "완료" : "미완료"}</button>
+                  <button onClick={() => remove(b.id)} className="p-1 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={12} color="var(--coral)" /></button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>최근 기록 (순수 공부시간)</h3>
+        {recentDates.length === 0 ? <EmptyState text="등록한 기록이 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {recentDates.map(d => {
+              const blocks = data.plannerBlocks.filter(b => b.studentId === studentId && b.date === d);
+              const pureMinutes = blocks.filter(b => b.done).reduce((s, b) => s + minutesBetween(b.start, b.end), 0);
+              return (
+                <li key={d} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
+                  <span className="text-xs" style={{ color: "#7a6f52" }}>{d}</span>
+                  <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>{formatMinutes(pureMinutes)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StudentHomeworkTab({ data, setData, studentId }) {
+  const mine = data.homeworks.filter(h => h.studentId === studentId).sort((a, b) => b.date.localeCompare(a.date));
+  const [openPhotoFor, setOpenPhotoFor] = useState(null);
+  const [uploadingId, setUploadingId] = useState(null);
+
+  const toggle = (h) => {
+    const updated = { ...h, submitted: !h.submitted };
+    setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? updated : x), alerts: syncHomeworkAlert(updated, data) });
+  };
+
+  const onPickPhoto = async (h, file) => {
+    if (!file) return;
+    setUploadingId(h.id);
+    try {
+      const dataUrl = await fileToCompressedDataURL(file);
+      setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? { ...x, photo: dataUrl } : x) });
+    } catch (e) {
+      console.error("사진 처리 실패", e);
+    }
+    setUploadingId(null);
+  };
+
+  const removePhoto = (h) => setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? { ...x, photo: null, note: "" } : x) });
+
+  return (
+    <div className="rounded-2xl p-4" style={panel}>
+      <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>숙제 제출</h3>
+      {mine.length === 0 ? <EmptyState text="등록된 숙제가 없습니다." /> : (
+        <ul className="flex flex-col gap-3">
+          {mine.map(h => (
+            <li key={h.id} className="p-3 rounded-lg flex flex-col gap-2" style={{ background: h.submitted ? "#efe6d0" : "#f8e3c9" }}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm" style={{ color: "#2b2417" }}>{h.date} · {h.title}</span>
+                <button onClick={() => toggle(h)} className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1" style={{ background: h.submitted ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>
+                  {h.submitted ? <Check size={12} /> : <ClipboardCheck size={12} />}{h.submitted ? "제출완료 (취소)" : "제출하기"}
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs underline cursor-pointer" style={{ color: "var(--gold)" }}>
+                  {uploadingId === h.id ? "처리 중…" : h.photo ? "질문 사진 다시 올리기" : "모르는 문제 사진 올리기"}
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => onPickPhoto(h, e.target.files[0])} />
+                </label>
+                {h.photo && (
+                  <>
+                    <button onClick={() => setOpenPhotoFor(openPhotoFor === h.id ? null : h.id)} className="text-xs underline" style={{ color: "#7a6f52" }}>
+                      {openPhotoFor === h.id ? "접기" : "보기"}
+                    </button>
+                    <button onClick={() => removePhoto(h)} className="text-xs" style={{ color: "var(--coral)" }}>삭제</button>
+                  </>
+                )}
+              </div>
+              {h.photo && openPhotoFor === h.id && (
+                <img src={h.photo} alt="모르는 문제" className="rounded-lg max-w-full" style={{ maxHeight: 260 }} />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-[11px] mt-3" style={{ color: "#8a7f5e" }}>사진은 앱 저장 공간을 함께 쓰기 때문에 너무 많이 쌓이면 저장이 안 될 수 있어요. 확인이 끝난 사진은 삭제해 주세요.</p>
+    </div>
+  );
+}
+
+function StudentVideos({ data, studentId }) {
+  const student = data.students.find(s => s.id === studentId);
+  const list = data.videos.filter(v => v.target === "ALL" || v.target === student?.grade);
+  const [openId, setOpenId] = useState(null);
+  return (
+    <div className="rounded-2xl p-4" style={panel}>
+      <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>수업 영상</h3>
+      {list.length === 0 ? <EmptyState text="등록된 영상이 없습니다." /> : (
+        <ul className="flex flex-col gap-2">
+          {list.map(v => (
+            <li key={v.id} className="rounded-lg overflow-hidden" style={{ background: "#efe6d0" }}>
+              {v.type === "file" ? (
+                <div className="flex flex-col">
+                  <button onClick={() => setOpenId(openId === v.id ? null : v.id)} className="flex items-center gap-3 p-3 text-left">
+                    <Video size={18} color="var(--gold)" />
+                    <span className="text-sm" style={{ color: "#2b2417" }}>{v.title}</span>
+                  </button>
+                  {openId === v.id && (
+                    <video src={v.url} controls className="w-full" style={{ maxHeight: 260, background: "#000" }} />
+                  )}
+                </div>
+              ) : (
+                <a href={v.url} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3">
+                  <Video size={18} color="var(--gold)" />
+                  <span className="text-sm" style={{ color: "#2b2417" }}>{v.title}</span>
+                </a>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ================= 학생: 강의실 (신규) =================
+function StudentClassroom({ data, setData, studentId }) {
+  const student = data.students.find(s => s.id === studentId);
+  const grade = student?.grade;
+
+  // 강의실에 들어오면 현재 학년에 해당하는 영상을 모두 "확인함" 처리 (새 영상 알림 배지 해제)
+  useEffect(() => {
+    const seen = new Set(student?.seenVideoIds || []);
+    const matching = data.videos.filter(v => v.target === "ALL" || v.target === grade);
+    const unseenIds = matching.filter(v => !seen.has(v.id)).map(v => v.id);
+    if (unseenIds.length > 0) {
+      setData({ ...data, students: data.students.map(s => s.id === studentId ? { ...s, seenVideoIds: [...(s.seenVideoIds || []), ...unseenIds] } : s) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.videos.length, studentId]);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4" style={{ background: "#173226", border: "1px solid #173226" }}>
+        <div className="text-[10px] tracking-[0.25em] mb-2" style={{ color: "var(--gold)" }}>EDUCATION</div>
+        <div className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: "#f4efe1" }}>{data.eduPhilosophy}</div>
+      </div>
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-1" style={{ fontFamily: "'Noto Serif KR', serif" }}>{grade} 강의실</h3>
+        <p className="text-xs whitespace-pre-wrap" style={{ color: "#7a6f52" }}>{(data.curricula && data.curricula[grade]) || CLASS_DETAILS[grade] || "루틴반"}</p>
+      </div>
+
+      <StudentVideos data={data} studentId={studentId} />
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3 flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}><CalendarClock size={18} color="var(--gold)" />시간표</h3>
+        <ReadOnlyTimetable data={data} studentId={studentId} />
+      </div>
+
+      <SeatStatus data={data} />
+    </div>
+  );
+}
+
+const STUDENT_TABS = [
+  { id: "attendance", label: "출석", icon: Check },
+  { id: "classroom", label: "강의실", icon: BookOpen },
+  { id: "planner", label: "플래너", icon: ClipboardList },
+  { id: "homework", label: "숙제", icon: BookOpen },
+  { id: "timetable", label: "자습실", icon: Armchair },
+  { id: "sessions", label: "보강·클리닉", icon: Repeat },
+  { id: "routine", label: "루틴체크", icon: Users2 },
+  { id: "rules", label: "학원규정", icon: FileText },
+];
+
+// 학생: 오늘 출석 체크인 (도착 시 직접 누르면 기준 시각과 비교해 출석/지각 자동 기록)
+function StudentAttendanceCheckin({ data, setData, studentId }) {
+  const today = todayStr();
+  const todays = data.attendance.find(a => a.studentId === studentId && a.date === today);
+  const student = data.students.find(s => s.id === studentId);
+  const cutoff = (student?.classGroup && data.attendanceCutoffTimes?.[student.classGroup]) || data.attendanceCutoffDefault || "16:00";
+
+  const checkIn = () => {
+    const now = new Date();
+    const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const status = time <= cutoff ? "출석" : "지각";
+    const entry = { id: uid(), studentId, date: today, status, time, source: "student" };
+    const alerts = syncAlerts(data.alerts, `attendance:${studentId}:${today}`, status === "지각", () => ({
+      studentId, kind: "지각",
+      message: `[루틴수학] ${student?.name || ""} 학생이 ${today} ${time}에 지각 체크인했습니다.`,
+    }));
+    setData({ ...data, attendance: [...data.attendance, entry], alerts });
+  };
+
+  const statusColor = { "출석": "#4c8c5f", "지각": "var(--gold)", "결석": "var(--coral)" };
+
+  return (
+    <div className="rounded-2xl p-5" style={{ background: "#173226" }}>
+      <div className="text-[10px] tracking-[0.3em] mb-3" style={{ color: "var(--gold)" }}>ROUTINE MATH ACADEMY</div>
+      <h3 className="text-lg font-bold mb-1" style={{ color: "#f4efe1", fontFamily: "'Noto Serif KR', serif" }}>오늘 출석 체크인</h3>
+      <p className="text-xs mb-4" style={{ color: "rgba(244,239,225,0.6)" }}>{today} · 기준 시각 {cutoff}{student?.classGroup ? ` (${student.classGroup} 반 기준)` : " (기본 기준)"} 이전 출석 / 이후 지각</p>
+      {todays ? (
+        <div className="rounded-xl p-4 flex items-center justify-between" style={{ background: "#1f4534" }}>
+          <span className="text-sm" style={{ color: "#f4efe1" }}>{todays.time ? `${todays.time} 도착` : "체크인 완료"}</span>
+          <span className="text-xs font-bold px-3 py-1 rounded-full" style={{ background: statusColor[todays.status], color: "#fff" }}>{todays.status}</span>
+        </div>
+      ) : (
+        <button onClick={checkIn} className="w-full py-3.5 rounded-xl text-sm font-semibold" style={btnGold}>출석하기</button>
+      )}
+    </div>
+  );
+}
+
+
+function StudentSessionsView({ data, studentId }) {
+  const list = data.sessions.filter(s => s.studentId === studentId).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  const statusColor = { "예정": "#7a6f52", "완료": "#4c8c5f", "불참": "var(--coral)" };
+  return (
+    <div className="rounded-2xl p-4" style={panel}>
+      <h3 className="font-bold mb-1 flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}><Repeat size={18} color="var(--gold)" />보강·클리닉 일정</h3>
+      <p className="text-[11px] mb-3" style={{ color: "#8a7f5e" }}>일정 등록·변경은 학원에서 관리합니다. 변경이 필요하면 선생님께 문의해 주세요.</p>
+      {list.length === 0 ? <EmptyState text="예정된 보강·클리닉 일정이 없습니다." /> : (
+        <ul className="flex flex-col gap-2">
+          {list.map(s => (
+            <li key={s.id} className="flex items-center justify-between p-3 rounded-lg" style={{ background: "#efe6d0" }}>
+              <div className="text-sm" style={{ color: "#4a4332" }}>
+                <b style={{ color: "#2b2417" }}>{s.type}</b> · {s.date} {s.time}
+                {s.memo && <div className="text-xs" style={{ color: "#7a6f52" }}>{s.memo}</div>}
+              </div>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: statusColor[s.status], color: "#fff" }}>{s.status}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function StudentHome({ data, setData, studentId, onLogout }) {
+  const [tab, setTab] = useState("attendance");
+  const student = data.students.find(s => s.id === studentId);
+  const seenVideoIds = new Set(student?.seenVideoIds || []);
+  const newVideoCount = data.videos.filter(v => (v.target === "ALL" || v.target === student?.grade) && !seenVideoIds.has(v.id)).length;
+  return (
+    <div className="min-h-screen px-5 py-6" style={{ background: "#f6f1e4" }}>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <div className="text-xs" style={{ color: "var(--gold)" }}>루틴수학학원 · 학생 모드</div>
+          <h2 className="text-lg font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>{student?.name}</h2>
+        </div>
+        <button onClick={onLogout} className="p-2 rounded-lg" style={{ border: "1px solid #ddcda0" }}><LogOut size={16} color="#7a6f52" /></button>
+      </div>
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {STUDENT_TABS.map(t => {
+          const Icon = t.icon; const active = tab === t.id;
+          const badge = t.id === "classroom" ? newVideoCount : 0;
+          return (
+            <button key={t.id} onClick={() => setTab(t.id)} className="relative flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl min-w-[60px]"
+              style={{ background: active ? "#efe3c8" : "transparent", border: `1px solid ${active ? "var(--gold)" : "#e4d8ba"}` }}>
+              <Icon size={16} color={active ? "var(--gold)" : "#7a6f52"} />
+              <span className="text-[11px]" style={{ color: active ? "var(--gold)" : "#7a6f52" }}>{t.label}</span>
+              {!!badge && <span className="absolute -top-1 -right-1 text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center" style={{ background: "var(--coral)", color: "#fff" }}>{badge}</span>}
+            </button>
+          );
+        })}
+      </div>
+      {tab === "attendance" && <StudentAttendanceCheckin data={data} setData={setData} studentId={studentId} />}
+      {tab === "classroom" && <StudentClassroom data={data} setData={setData} studentId={studentId} />}
+      {tab === "planner" && <StudentPlannerTimetable data={data} setData={setData} studentId={studentId} />}
+      {tab === "homework" && <StudentHomeworkTab data={data} setData={setData} studentId={studentId} />}
+      {tab === "timetable" && (
+        <div className="flex flex-col gap-4">
+          <StudentTimetable data={data} setData={setData} studentId={studentId} />
+          <SeatStatus data={data} />
+        </div>
+      )}
+      {tab === "sessions" && <StudentSessionsView data={data} studentId={studentId} />}
+      {tab === "routine" && <StudentRoutineCheck data={data} setData={setData} studentId={studentId} canEdit={false} />}
+      {tab === "rules" && (
+        <div className="p-4 rounded-2xl whitespace-pre-wrap text-sm leading-relaxed" style={{ ...panel, color: "#4a4332" }}>{data.rules}</div>
+      )}
+    </div>
+  );
+}
+
+// ================= 진입 화면 =================
+function AdminGate({ onPass, onBack }) {
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+  const submit = () => { if (pin === ADMIN_PIN) onPass(); else setError("PIN이 올바르지 않습니다."); };
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center px-6" style={{ background: "#f6f1e4" }}>
+      <h1 className="text-lg font-bold mb-4" style={{ fontFamily: "'Noto Serif KR', serif" }}>관리자 PIN 입력</h1>
+      <input type="password" inputMode="numeric" value={pin} onChange={e => setPin(e.target.value)} className="text-center text-xl w-32 py-2 rounded-lg mb-3" style={inputStyle} />
+      {error && <p className="text-xs mb-2" style={{ color: "var(--coral)" }}>{error}</p>}
+      <button onClick={submit} className="px-6 py-2 rounded-lg text-sm font-semibold mb-3" style={btnGold}>확인</button>
+      <button onClick={onBack} className="text-xs flex items-center gap-1" style={{ color: "#8a7f5e" }}><ChevronLeft size={12} />처음으로</button>
+    </div>
+  );
+}
+
+function RoleGate({ onTeacher, onStudent, onAdmin }) {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center px-6" style={{ background: "#f6f1e4" }}>
+      <div className="text-center mb-10">
+        <div className="text-xs tracking-[0.3em]" style={{ color: "var(--gold)" }}>ROUTINE MATH ACADEMY</div>
+        <h1 className="text-2xl font-bold mt-2" style={{ fontFamily: "'Noto Serif KR', serif" }}>루틴수학학원</h1>
+      </div>
+      <div className="w-full max-w-xs flex flex-col gap-3">
+        <button onClick={onStudent} className="w-full py-3.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2" style={btnGold}><GraduationCap size={16} />학생으로 입장</button>
+        <button onClick={onTeacher} className="w-full py-3.5 rounded-xl text-sm font-semibold" style={{ border: "1px solid #ddcda0", color: "#5c543e" }}>강사로 입장</button>
+      </div>
+      <button onClick={onAdmin} className="mt-10 text-[11px]" style={{ color: "#cdbb8a" }}>관리자</button>
+    </div>
+  );
+}
+
+function App() {
+  const { data, setData, loading, saving } = useAppData();
+  const [view, setView] = useState("gate");
+  const [studentId, setStudentId] = useState(null);
+  const [teacherId, setTeacherId] = useState(null);
+
+  useEffect(() => {
+    if (document.getElementById("routine-font-link")) return;
+    const link = document.createElement("link");
+    link.id = "routine-font-link"; link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&family=Pretendard:wght@400;500;600&display=swap";
+    document.head.appendChild(link);
+  }, []);
+
+  useEffect(() => {
+    document.title = "루틴수학";
+    const setMeta = (name, content) => {
+      let m = document.querySelector(`meta[name="${name}"]`);
+      if (!m) { m = document.createElement("meta"); m.name = name; document.head.appendChild(m); }
+      m.content = content;
+    };
+    setMeta("apple-mobile-web-app-title", "루틴수학");
+    setMeta("apple-mobile-web-app-capable", "yes");
+    setMeta("mobile-web-app-capable", "yes");
+  }, []);
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center" style={{ background: "#f6f1e4" }}><Loader2 className="animate-spin" color="var(--gold)" /></div>;
+
+  const teacher = data.teachers.find(t => t.id === teacherId);
+
+  return (
+    <div style={{ "--gold": "#e2822f", "--coral": "#c65a1f" }}>
+      <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; }`}</style>
+
+      {view === "gate" && <RoleGate onStudent={() => setView("studentLogin")} onTeacher={() => setView("teacherLogin")} onAdmin={() => setView("adminGate")} />}
+
+      {view === "studentLogin" && (
+        <PhoneLoginCard heading="학생 로그인" sub="강의실 · 플래너 · 자습실"
+          onSubmit={(name, pin) => { const m = findByPhone(data.students, name, pin); if (m) { setStudentId(m.id); setView("student"); return true; } return false; }}
+          onBack={() => setView("gate")} />
+      )}
+      {view === "student" && <StudentHome data={data} setData={setData} studentId={studentId} onLogout={() => { setStudentId(null); setView("gate"); }} />}
+
+      {view === "teacherLogin" && (
+        <TeacherLoginCard data={data} onLogin={(id) => { setTeacherId(id); setView("teacher"); }} onBack={() => setView("gate")} />
+      )}
+      {view === "teacher" && teacher && <TeacherHome data={data} setData={setData} teacher={teacher} onLogout={() => { setTeacherId(null); setView("gate"); }} />}
+
+      {view === "adminGate" && <AdminGate onPass={() => setView("admin")} onBack={() => setView("gate")} />}
+      {view === "admin" && <AdminPanel data={data} setData={setData} onExit={() => setView("gate")} />}
+
+      {saving && <div className="fixed bottom-2 left-1/2 -translate-x-1/2 text-[10px] px-2 py-1 rounded-full" style={{ background: "#fffcf6", color: "#7a6f52" }}>저장 중…</div>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
