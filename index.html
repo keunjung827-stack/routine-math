@@ -13,21 +13,43 @@
 <meta name="theme-color" content="#173226" />
 
 <!-- Tailwind (빌드 없이 CDN으로 바로 사용) -->
-<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.tailwindcss.com" crossorigin="anonymous"></script>
 
 <!-- 브라우저에서 바로 JSX를 변환해주는 Babel -->
-<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js" crossorigin="anonymous"></script>
 
 <style>
   html, body, #root { height: 100%; margin: 0; }
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root">
+  <div style="padding:24px;font-family:-apple-system,sans-serif;color:#7a6f52;">불러오는 중…</div>
+</div>
+
+<script>
+  function showError(title, detail) {
+    var root = document.getElementById('root');
+    if (root) {
+      root.innerHTML =
+        '<div style="padding:20px;font-family:-apple-system,monospace;white-space:pre-wrap;word-break:break-word;color:#b91c1c;background:#fff;line-height:1.5;">' +
+        '<div style="font-weight:bold;font-size:16px;margin-bottom:10px;">⚠️ ' + title + '</div>' +
+        '<div style="font-size:13px;">' + detail + '</div></div>';
+    }
+  }
+  window.addEventListener('error', function (e) {
+    showError('오류가 발생했어요', (e.error && e.error.stack) ? e.error.stack : (e.message || String(e)));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var reason = e.reason;
+    showError('오류가 발생했어요 (Promise)', (reason && reason.stack) ? reason.stack : String(reason));
+  });
+</script>
 
 <script type="text/babel" data-type="module" data-presets="react">
 import React, { useState, useEffect, useRef } from "https://esm.sh/react@18.3.1";
 import ReactDOM from "https://esm.sh/react-dom@18.3.1/client";
+
 import {
   Home, Users, ClipboardList, BookOpen, CalendarClock, ClipboardCheck,
   Bell, Inbox, ShieldCheck, FileText, LogOut, ChevronLeft, Check, X,
@@ -2681,7 +2703,11 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+try {
+  ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+} catch (e) {
+  window.showError("앱 실행 중 오류", (e && e.stack) ? e.stack : String(e));
+}
 </script>
 </body>
 </html>
