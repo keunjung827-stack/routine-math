@@ -138,6 +138,9 @@ window.storage = {
 };
 
 
+
+
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const APP_ICON_DATA_URL = "";
 
@@ -159,6 +162,18 @@ const ROUTINE_ITEM_DEFS = [
 ];
 function studentsInScope(students, classGroups) {
   return classGroups && classGroups.length ? students.filter(s => classGroups.includes(s.classGroup)) : students;
+}
+
+function pendingMessageThreads(data, scopeClassGroups) {
+  const scopedIds = new Set(studentsInScope(data.students, scopeClassGroups).map(s => s.id));
+  const byStudent = {};
+  (data.messages || []).forEach(m => {
+    if (scopedIds.has(m.studentId)) (byStudent[m.studentId] = byStudent[m.studentId] || []).push(m);
+  });
+  return Object.values(byStudent).filter(arr => {
+    const last = [...arr].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).pop();
+    return last.sender === "student";
+  }).length;
 }
 
 function mondayOf(dateStr) {
@@ -245,6 +260,8 @@ const emptyData = () => ({
   dashboardNickname: "수학쌤",
   attendanceCutoffTimes: {},
   attendanceCutoffDefault: "16:00",
+  classSchedules: {},
+  messages: [],
 });
 
 function useAppData() {
@@ -677,13 +694,16 @@ function PlannerTab({ data, setData }) {
 }
 
 // ================= ADMIN: 숙제 제출 =================
-function HomeworkTab({ data, setData }) {
+function HomeworkTab({ data, setData, scopeClassGroups }) {
   const [date, setDate] = useState(todayStr());
   const [studentId, setStudentId] = useState("");
   const [title, setTitle] = useState("");
   const [openPhoto, setOpenPhoto] = useState(null);
-  const dayEntries = data.homeworks.filter(h => h.date === date);
+  const scopedStudents = studentsInScope(data.students, scopeClassGroups);
+  const scopedIds = new Set(scopedStudents.map(s => s.id));
+  const dayEntries = data.homeworks.filter(h => h.date === date && scopedIds.has(h.studentId));
   const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
+  const formatTime = (iso) => iso ? new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }) : "";
   const add = () => {
     if (!studentId || !title.trim()) return;
     const entry = { id: uid(), studentId, date, title, submitted: false, photo: null, note: "" };
@@ -691,7 +711,8 @@ function HomeworkTab({ data, setData }) {
     setStudentId(""); setTitle("");
   };
   const toggle = (h) => {
-    const updated = { ...h, submitted: !h.submitted };
+    const nextSubmitted = !h.submitted;
+    const updated = { ...h, submitted: nextSubmitted, submittedAt: nextSubmitted ? (h.submittedAt || new Date().toISOString()) : null };
     setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? updated : x), alerts: syncHomeworkAlert(updated, data) });
   };
   const remove = (id) => setData({ ...data, homeworks: data.homeworks.filter(h => h.id !== id), alerts: data.alerts.filter(a => a.sourceKey !== `homework:${id}` || a.status !== "대기") });
@@ -702,7 +723,7 @@ function HomeworkTab({ data, setData }) {
         <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>숙제 등록</h3>
         <div className="grid grid-cols-2 gap-3">
           <Field label="날짜"><input type="date" className={inputCls} style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
-          <Field label="학생"><StudentSelect students={data.students} value={studentId} onChange={setStudentId} /></Field>
+          <Field label="학생"><StudentSelect students={scopedStudents} value={studentId} onChange={setStudentId} /></Field>
         </div>
         <Field label="숙제 내용"><input className={inputCls} style={inputStyle} value={title} onChange={e => setTitle(e.target.value)} placeholder="예: 공통수학2 응용 3-1 ~ 3-4" /></Field>
         <button onClick={add} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />추가</button>
@@ -714,7 +735,10 @@ function HomeworkTab({ data, setData }) {
             {dayEntries.map(h => (
               <li key={h.id} className="flex flex-col gap-2 p-3 rounded-lg" style={{ background: h.submitted ? "#efe6d0" : "#f8e3c9" }}>
                 <div className="flex items-center justify-between">
-                  <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>{studentName(h.studentId)}</b> · {h.title}</div>
+                  <div className="text-sm" style={{ color: "#4a4332" }}>
+                    <b style={{ color: "#2b2417" }}>{studentName(h.studentId)}</b> · {h.title}
+                    {h.submitted && h.submittedAt && <div className="text-xs mt-0.5" style={{ color: "#7a6f52" }}>{formatTime(h.submittedAt)} 제출</div>}
+                  </div>
                   <div className="flex items-center gap-2">
                     <button onClick={() => toggle(h)} className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1" style={{ background: h.submitted ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>
                       {h.submitted ? <Check size={12} /> : <X size={12} />}{h.submitted ? "제출완료" : "미제출"}
@@ -1130,6 +1154,111 @@ function WeeklyRoutineTab({ data, setData, scopeClassGroups }) {
   );
 }
 
+// ================= ADMIN/강사: 1:1 문의 =================
+function MessagesTab({ data, setData, scopeClassGroups }) {
+  const [studentId, setStudentId] = useState("");
+  const [text, setText] = useState("");
+  const students = studentsInScope(data.students, scopeClassGroups);
+  const scopedIds = new Set(students.map(s => s.id));
+  const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
+  const formatTime = (iso) => new Date(iso).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+  const byStudent = {};
+  (data.messages || []).filter(m => scopedIds.has(m.studentId)).forEach(m => {
+    (byStudent[m.studentId] = byStudent[m.studentId] || []).push(m);
+  });
+  const threadList = Object.keys(byStudent).map(sid => {
+    const msgs = byStudent[sid].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const last = msgs[msgs.length - 1];
+    return { studentId: sid, last, needsReply: last.sender === "student" };
+  }).sort((a, b) => b.last.createdAt.localeCompare(a.last.createdAt));
+
+  const thread = studentId ? (data.messages || []).filter(m => m.studentId === studentId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)) : [];
+
+  const send = () => {
+    if (!studentId || !text.trim()) return;
+    const msg = { id: uid(), studentId, sender: "staff", text: text.trim(), createdAt: new Date().toISOString() };
+    setData({ ...data, messages: [...(data.messages || []), msg] });
+    setText("");
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4" style={panel}>
+        <Field label="학생 선택"><StudentSelect students={students} value={studentId} onChange={setStudentId} /></Field>
+      </div>
+      {threadList.length > 0 && (
+        <div className="rounded-2xl p-4" style={panel}>
+          <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>최근 문의 ({threadList.length})</h3>
+          <ul className="flex flex-col gap-2">
+            {threadList.map(t => (
+              <li key={t.studentId} onClick={() => setStudentId(t.studentId)} className="flex items-center justify-between p-2.5 rounded-lg cursor-pointer" style={{ background: t.studentId === studentId ? "#efe3c8" : "#efe6d0" }}>
+                <div className="text-sm" style={{ color: "#2b2417" }}>
+                  <b>{studentName(t.studentId)}</b>
+                  <div className="text-xs" style={{ color: "#7a6f52" }}>{t.last.text.length > 30 ? t.last.text.slice(0, 30) + "…" : t.last.text}</div>
+                </div>
+                {t.needsReply && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: "var(--coral)", color: "#fff" }}>답장 필요</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {studentId ? (
+        <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+          <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>{studentName(studentId)} 학생과의 대화</h3>
+          <div className="flex flex-col gap-2 max-h-96 overflow-y-auto">
+            {thread.length === 0 ? <EmptyState text="주고받은 메시지가 없습니다." /> : thread.map(m => (
+              <div key={m.id} className={"max-w-[80%] p-2.5 rounded-xl text-sm " + (m.sender === "staff" ? "self-end" : "self-start")}
+                style={{ background: m.sender === "staff" ? "var(--gold)" : "#efe6d0", color: m.sender === "staff" ? "#1a1508" : "#2b2417" }}>
+                {m.text}
+                <div className="text-[10px] mt-1" style={{ opacity: 0.7 }}>{formatTime(m.createdAt)}</div>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input className={inputCls} style={inputStyle} value={text} onChange={e => setText(e.target.value)} placeholder="메시지 입력" onKeyDown={e => e.key === "Enter" && send()} />
+            <button onClick={send} className="px-4 py-2 rounded-lg text-sm font-semibold" style={btnGold}>전송</button>
+          </div>
+        </div>
+      ) : <EmptyState text="학생을 선택하면 대화를 볼 수 있습니다." />}
+    </div>
+  );
+}
+
+// 학생: 1:1 문의
+function StudentMessagesTab({ data, setData, studentId }) {
+  const [text, setText] = useState("");
+  const thread = (data.messages || []).filter(m => m.studentId === studentId).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const formatTime = (iso) => new Date(iso).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+  const send = () => {
+    if (!text.trim()) return;
+    const msg = { id: uid(), studentId, sender: "student", text: text.trim(), createdAt: new Date().toISOString() };
+    setData({ ...data, messages: [...(data.messages || []), msg] });
+    setText("");
+  };
+
+  return (
+    <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+      <h3 className="font-bold flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}><MessageSquare size={18} color="var(--gold)" />선생님과 1:1 문의</h3>
+      <p className="text-[11px]" style={{ color: "#8a7f5e" }}>담당 강사·관리자가 확인 후 답장을 남겨드려요.</p>
+      <div className="flex flex-col gap-2 max-h-96 overflow-y-auto">
+        {thread.length === 0 ? <EmptyState text="아직 대화가 없습니다. 궁금한 점을 편하게 남겨보세요." /> : thread.map(m => (
+          <div key={m.id} className={"max-w-[80%] p-2.5 rounded-xl text-sm " + (m.sender === "student" ? "self-end" : "self-start")}
+            style={{ background: m.sender === "student" ? "var(--gold)" : "#efe6d0", color: m.sender === "student" ? "#1a1508" : "#2b2417" }}>
+            {m.text}
+            <div className="text-[10px] mt-1" style={{ opacity: 0.7 }}>{formatTime(m.createdAt)}</div>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input className={inputCls} style={inputStyle} value={text} onChange={e => setText(e.target.value)} placeholder="메시지 입력" onKeyDown={e => e.key === "Enter" && send()} />
+        <button onClick={send} className="px-4 py-2 rounded-lg text-sm font-semibold" style={btnGold}>전송</button>
+      </div>
+    </div>
+  );
+}
+
 // ================= ADMIN: 학부모 알림 =================
 function AlertsTab({ data, setData }) {
   const [copiedId, setCopiedId] = useState(null);
@@ -1376,6 +1505,104 @@ function StudentTimetable({ data, setData, studentId }) {
     <div className="flex flex-col gap-3">
       <p className="text-xs" style={{ color: "#7a6f52" }}>칸을 누르면 이용(○) → 결석(X) → 해당없음(–) 순서로 바뀝니다.</p>
       <TimetableGrid data={data} studentId={studentId} weekStart={weekStart} today={today} onTap={tap} />
+    </div>
+  );
+}
+
+// ================= 반별 정규 수업 시간표 (관리자/강사 등록 → 학생 강의실에 표시) =================
+function ClassScheduleTab({ data, setData, scopeClassGroups }) {
+  const allGroups = [...new Set(data.students.map(s => s.classGroup).filter(Boolean))].sort();
+  const groups = scopeClassGroups && scopeClassGroups.length ? allGroups.filter(g => scopeClassGroups.includes(g)) : allGroups;
+  const [selectedGroup, setSelectedGroup] = useState(groups[0] || "");
+  const [selectedDays, setSelectedDays] = useState([]);
+  const [start, setStart] = useState("18:30");
+  const [end, setEnd] = useState("21:30");
+
+  const blocksFor = (g) => (data.classSchedules && data.classSchedules[g]) || [];
+  const toggleDay = (d) => setSelectedDays(selectedDays.includes(d) ? selectedDays.filter(x => x !== d) : [...selectedDays, d]);
+
+  const addBlock = () => {
+    if (!selectedGroup || selectedDays.length === 0) return;
+    const block = { id: uid(), days: DAYS.filter(d => selectedDays.includes(d)), start, end };
+    const current = data.classSchedules || {};
+    setData({ ...data, classSchedules: { ...current, [selectedGroup]: [...(current[selectedGroup] || []), block] } });
+    setSelectedDays([]);
+  };
+
+  const removeBlock = (g, id) => {
+    const current = data.classSchedules || {};
+    setData({ ...data, classSchedules: { ...current, [g]: (current[g] || []).filter(b => b.id !== id) } });
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>반 시간표 등록</h3>
+        {groups.length === 0 ? (
+          <p className="text-xs" style={{ color: "#8a7f5e" }}>등록된 반이 없습니다. 학생 등록 시 "반/그룹"을 입력하면 여기에 나타나요.</p>
+        ) : (
+          <>
+            <Field label="반 선택">
+              <select className={inputCls} style={inputStyle} value={selectedGroup} onChange={e => setSelectedGroup(e.target.value)}>
+                {groups.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </Field>
+            <div>
+              <span className="text-xs" style={{ color: "#7a6f52" }}>요일 (여러 개 선택 가능)</span>
+              <div className="flex gap-1.5 mt-2 flex-wrap">
+                {DAYS.map(d => (
+                  <button key={d} onClick={() => toggleDay(d)} className="px-3 py-1.5 rounded-full text-xs font-semibold"
+                    style={{ background: selectedDays.includes(d) ? "var(--gold)" : "#efe6d0", color: selectedDays.includes(d) ? "#1a1508" : "#6b6250" }}>{d}</button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="시작 시각"><input type="time" className={inputCls} style={inputStyle} value={start} onChange={e => setStart(e.target.value)} /></Field>
+              <Field label="종료 시각"><input type="time" className={inputCls} style={inputStyle} value={end} onChange={e => setEnd(e.target.value)} /></Field>
+            </div>
+            <button onClick={addBlock} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />시간 추가</button>
+            <p className="text-[11px]" style={{ color: "#8a7f5e" }}>예: 고1-코어반에 월·수 18:30–21:30 추가하면, 그 반 학생들 강의실 화면에 바로 표시돼요.</p>
+          </>
+        )}
+      </div>
+
+      {groups.map(g => (
+        <div key={g} className="rounded-2xl p-4" style={panel}>
+          <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>{g}</h3>
+          {blocksFor(g).length === 0 ? <EmptyState text="등록된 시간이 없습니다." /> : (
+            <ul className="flex flex-col gap-2">
+              {blocksFor(g).map(b => (
+                <li key={b.id} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
+                  <span className="text-sm" style={{ color: "#2b2417" }}>{(b.days || []).join(", ")} · {b.start}–{b.end}</span>
+                  <button onClick={() => removeBlock(g, b.id)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// 학생: 강의실에서 보는 우리 반 정규 수업 시간표 (조회 전용)
+function ClassScheduleCard({ data, studentId }) {
+  const student = data.students.find(s => s.id === studentId);
+  const blocks = (data.classSchedules && data.classSchedules[student?.classGroup]) || [];
+  return (
+    <div className="rounded-2xl p-4" style={panel}>
+      <h3 className="font-bold mb-1 flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}><CalendarClock size={18} color="var(--gold)" />정규 수업 시간표</h3>
+      {student?.classGroup && <p className="text-xs mb-3" style={{ color: "#7a6f52" }}>{student.classGroup}</p>}
+      {blocks.length === 0 ? <EmptyState text="등록된 시간표가 없습니다." /> : (
+        <ul className="flex flex-col gap-2">
+          {blocks.map(b => (
+            <li key={b.id} className="flex items-center justify-between p-3 rounded-lg" style={{ background: "#efe6d0" }}>
+              <span className="text-sm font-semibold" style={{ color: "#2b2417" }}>{(b.days || []).join(", ")}</span>
+              <span className="text-sm" style={{ color: "#7a6f52" }}>{b.start} – {b.end}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -1678,7 +1905,7 @@ const COMPONENT_MAP = {
   videos: VideosTab, routine: AdminRoutineTab, alerts: AlertsTab,
   rules: RulesTab, attendance: AttendanceTab, teachers: TeachersTab,
   requests: RequestsTab, dailyRoutine: DailyRoutineTab, weeklyRoutine: WeeklyRoutineTab,
-  eduPhilosophy: EduPhilosophyTab, curriculum: CurriculumTab, today: TodayChecklistTab,
+  eduPhilosophy: EduPhilosophyTab, curriculum: CurriculumTab, today: TodayChecklistTab, classSchedule: ClassScheduleTab, messages: MessagesTab,
 };
 
 const GROUPS = [
@@ -1686,8 +1913,8 @@ const GROUPS = [
   { id: "students", label: "학생 관리", icon: Users, accent: "#4c8c5f", tabs: [{ id: "students", label: "학생 명부" }, { id: "routine", label: "루틴체크" }] },
   { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "planner", label: "플래너·성취율" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }] },
   { id: "schedule", label: "일정·자습실", icon: CalendarClock, accent: "#e2822f", tabs: [{ id: "sessions", label: "보강·클리닉" }, { id: "seats", label: "자습실 관리" }] },
-  { id: "classroom", label: "강의실", icon: BookOpen, accent: "#c65a1f", tabs: [{ id: "videos", label: "강의 업로드" }, { id: "curriculum", label: "커리큘럼" }, { id: "eduPhilosophy", label: "교육관" }] },
-  { id: "comm", label: "소통", icon: Bell, accent: "#c65a1f", tabs: [{ id: "alerts", label: "학부모 알림" }, { id: "requests", label: "요청함" }] },
+  { id: "classroom", label: "강의실", icon: BookOpen, accent: "#c65a1f", tabs: [{ id: "videos", label: "강의 업로드" }, { id: "curriculum", label: "커리큘럼" }, { id: "eduPhilosophy", label: "교육관" }, { id: "classSchedule", label: "반 시간표" }] },
+  { id: "comm", label: "소통", icon: Bell, accent: "#c65a1f", tabs: [{ id: "alerts", label: "학부모 알림" }, { id: "requests", label: "요청함" }, { id: "messages", label: "1:1 문의" }] },
   { id: "staff", label: "강사 관리", icon: GraduationCap, accent: "#7a8cc4", tabs: [{ id: "teachers", label: "강사 계정" }] },
   { id: "settings", label: "설정", icon: ShieldCheck, accent: "#c47ab0", tabs: [{ id: "rules", label: "학원 규정" }] },
 ];
@@ -1707,7 +1934,8 @@ function AdminRoutineTab({ data, setData }) {
 function AdminHome({ data, onOpen, onExit }) {
   const pendingAlerts = data.alerts.filter(a => a.status === "대기").length;
   const pendingRequests = data.requests.filter(r => r.status === "대기").length;
-  const badgeFor = { comm: pendingAlerts + pendingRequests };
+  const pendingMessages = pendingMessageThreads(data);
+  const badgeFor = { comm: pendingAlerts + pendingRequests + pendingMessages };
   return (
     <div className="min-h-screen px-5 py-6" style={{ background: "#f6f1e4" }}>
       <div className="flex items-center justify-between mb-1">
@@ -2070,12 +2298,12 @@ function RequestsTab({ data, setData }) {
   );
 }
 
-function TeacherCommTab({ data, setData }) {
+function TeacherCommTab({ data, setData, scopeClassGroups }) {
   const [sub, setSub] = useState("alerts");
   return (
     <div className="flex flex-col gap-3">
       <div className="flex gap-2">
-        {[{ id: "alerts", label: "학부모 알림" }, { id: "requests", label: "요청함" }].map(s => {
+        {[{ id: "alerts", label: "학부모 알림" }, { id: "requests", label: "요청함" }, { id: "messages", label: "1:1 문의" }].map(s => {
           const active = sub === s.id;
           return (
             <button key={s.id} onClick={() => setSub(s.id)} className="px-3 py-1.5 rounded-full text-xs font-semibold"
@@ -2085,6 +2313,7 @@ function TeacherCommTab({ data, setData }) {
       </div>
       {sub === "alerts" && <AlertsTab data={data} setData={setData} />}
       {sub === "requests" && <RequestsTab data={data} setData={setData} />}
+      {sub === "messages" && <MessagesTab data={data} setData={setData} scopeClassGroups={scopeClassGroups} />}
     </div>
   );
 }
@@ -2129,7 +2358,7 @@ function TeacherTodayTab({ data, scopeClassGroups }) {
                         <span key={t.id} className="px-2 py-0.5 rounded-full" style={{ background: t.score < t.passLine ? "#f8e3c9" : "#e4d8ba", color: t.score < t.passLine ? "var(--coral)" : "#5c543e" }}>{t.name} {t.score}점</span>
                       ))}
                       {hws.length === 0 ? <span>숙제 없음</span> : hws.map(h => (
-                        <span key={h.id} className="px-2 py-0.5 rounded-full" style={{ background: h.submitted ? "#e4d8ba" : "#f8e3c9", color: h.submitted ? "#5c543e" : "var(--coral)" }}>{h.title} · {h.submitted ? "제출" : "미제출"}</span>
+                        <span key={h.id} className="px-2 py-0.5 rounded-full" style={{ background: h.submitted ? "#e4d8ba" : "#f8e3c9", color: h.submitted ? "#5c543e" : "var(--coral)" }}>{h.title} · {h.submitted ? `제출${h.submittedAt ? ` (${new Date(h.submittedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })})` : ""}` : "미제출"}</span>
                       ))}
                     </div>
                   </li>
@@ -2148,6 +2377,8 @@ const TEACHER_TABS = [
   { id: "routine", label: "오늘의 루틴", icon: ClipboardList },
   { id: "weeklyRoutine", label: "주간 루틴", icon: TrendingUp },
   { id: "students", label: "학생등록", icon: Users },
+  { id: "homework", label: "숙제", icon: BookOpen },
+  { id: "classSchedule", label: "반 시간표", icon: CalendarClock },
   { id: "tests", label: "테스트기록", icon: ClipboardCheck },
   { id: "sessions", label: "보강·클리닉", icon: CalendarClock },
   { id: "attendance", label: "출결기록", icon: ClipboardSignature },
@@ -2160,7 +2391,8 @@ function TeacherHome({ data, setData, teacher, onLogout }) {
   const [tab, setTab] = useState("today");
   const pendingAlerts = data.alerts.filter(a => a.status === "대기").length;
   const pendingRequests = data.requests.filter(r => r.status === "대기").length;
-  const commBadge = pendingAlerts + pendingRequests;
+  const pendingMessages = pendingMessageThreads(data, teacher.classGroups);
+  const commBadge = pendingAlerts + pendingRequests + pendingMessages;
   return (
     <div className="min-h-screen px-5 py-6" style={{ background: "#f6f1e4" }}>
       <div className="flex items-center justify-between mb-4">
@@ -2189,12 +2421,14 @@ function TeacherHome({ data, setData, teacher, onLogout }) {
       {tab === "routine" && <DailyRoutineTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "weeklyRoutine" && <WeeklyRoutineTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "students" && <TeacherStudentsTab data={data} setData={setData} teacher={teacher} />}
+      {tab === "homework" && <HomeworkTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
+      {tab === "classSchedule" && <ClassScheduleTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "tests" && <TestsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "sessions" && <SessionsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "attendance" && <AttendanceTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "comments" && <TeacherCommentsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "requests" && <TeacherRequestsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
-      {tab === "comm" && <TeacherCommTab data={data} setData={setData} />}
+      {tab === "comm" && <TeacherCommTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
     </div>
   );
 }
@@ -2364,7 +2598,8 @@ function StudentHomeworkTab({ data, setData, studentId }) {
   const [uploadingId, setUploadingId] = useState(null);
 
   const toggle = (h) => {
-    const updated = { ...h, submitted: !h.submitted };
+    const nextSubmitted = !h.submitted;
+    const updated = { ...h, submitted: nextSubmitted, submittedAt: nextSubmitted ? new Date().toISOString() : null };
     setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? updated : x), alerts: syncHomeworkAlert(updated, data) });
   };
 
@@ -2486,10 +2721,7 @@ function StudentClassroom({ data, setData, studentId }) {
 
       <StudentVideos data={data} studentId={studentId} />
 
-      <div className="rounded-2xl p-4" style={panel}>
-        <h3 className="font-bold mb-3 flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}><CalendarClock size={18} color="var(--gold)" />시간표</h3>
-        <ReadOnlyTimetable data={data} studentId={studentId} />
-      </div>
+      <ClassScheduleCard data={data} studentId={studentId} />
 
       <SeatStatus data={data} />
     </div>
@@ -2503,6 +2735,7 @@ const STUDENT_TABS = [
   { id: "homework", label: "숙제", icon: BookOpen },
   { id: "timetable", label: "자습실", icon: Armchair },
   { id: "sessions", label: "보강·클리닉", icon: Repeat },
+  { id: "messages", label: "문의", icon: MessageSquare },
   { id: "routine", label: "루틴체크", icon: Users2 },
   { id: "rules", label: "학원규정", icon: FileText },
 ];
@@ -2609,6 +2842,7 @@ function StudentHome({ data, setData, studentId, onLogout }) {
         </div>
       )}
       {tab === "sessions" && <StudentSessionsView data={data} studentId={studentId} />}
+      {tab === "messages" && <StudentMessagesTab data={data} setData={setData} studentId={studentId} />}
       {tab === "routine" && <StudentRoutineCheck data={data} setData={setData} studentId={studentId} canEdit={false} />}
       {tab === "rules" && (
         <div className="p-4 rounded-2xl whitespace-pre-wrap text-sm leading-relaxed" style={{ ...panel, color: "#4a4332" }}>{data.rules}</div>
