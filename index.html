@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>Routine Academy</title>
+<title>루틴수학</title>
 <link rel="apple-touch-icon" href="icon-180.png" />
 <link rel="icon" href="icon-192.png" />
 
 <!-- 홈 화면 추가 시 전체화면 앱처럼 동작 -->
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-title" content="Routine Academy" />
+<meta name="apple-mobile-web-app-title" content="루틴수학" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="theme-color" content="#173226" />
 
@@ -66,8 +66,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // (Supabase 대시보드 → Project Settings → API 에서 확인)
 // 비워두면(따옴표 안이 빈 상태) 이 브라우저에만 저장되는 localStorage 모드로 동작합니다.
 // ============================================================
-const SUPABASE_URL = "";
-const SUPABASE_ANON_KEY = "";
+const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -2664,13 +2664,13 @@ function App() {
   }, []);
 
   useEffect(() => {
-    document.title = "Routine Academy";
+    document.title = "루틴수학";
     const setMeta = (name, content) => {
       let m = document.querySelector(`meta[name="${name}"]`);
       if (!m) { m = document.createElement("meta"); m.name = name; document.head.appendChild(m); }
       m.content = content;
     };
-    setMeta("apple-mobile-web-app-title", "Routine Academy");
+    setMeta("apple-mobile-web-app-title", "루틴수학");
     setMeta("apple-mobile-web-app-capable", "yes");
     setMeta("mobile-web-app-capable", "yes");
   }, []);
