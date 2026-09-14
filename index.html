@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-1";
+const APP_VERSION = "2026-09-14-3";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -147,6 +147,8 @@ window.storage = {
 
 
 
+
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const APP_ICON_DATA_URL = "";
 
@@ -155,6 +157,8 @@ const STORAGE_KEY = "routine_math_unified_v2";
 const PASS_RATE = 70;
 const ADMIN_PIN = "2025";
 const GRADES = ["중1", "중2", "중3", "고1", "고2", "고3"];
+const CLASS_TRACKS = ["코어", "피크", "슈프림"];
+const CLASS_GROUPS = ["중1", "중2", "중3", "고1", "고2"].flatMap(g => CLASS_TRACKS.map(t => `${g}-${t}`));
 const DAYS = ["월", "화", "수", "목", "금", "토"];
 const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 const TEST_TYPES = ["일일테스트", "주간테스트", "월말테스트", "누적테스트"];
@@ -585,7 +589,12 @@ function StudentsTab({ data, setData }) {
               {GRADES.map(g => <option key={g}>{g}</option>)}
             </select>
           </Field>
-          <Field label="반/그룹"><input className={inputCls} style={inputStyle} value={form.classGroup} onChange={e => setForm({ ...form, classGroup: e.target.value })} placeholder="예: 고1-3" /></Field>
+          <Field label="반/그룹">
+            <select className={inputCls} style={inputStyle} value={form.classGroup} onChange={e => setForm({ ...form, classGroup: e.target.value })}>
+              <option value="">반 선택 안 함</option>
+              {CLASS_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </Field>
           <Field label="전화번호"><input className={inputCls} style={inputStyle} value={form.parentPhone} onChange={e => setForm({ ...form, parentPhone: e.target.value })} placeholder="010-0000-0000" /></Field>
         </div>
         <p className="text-[11px]" style={{ color: "#8a7f5e" }}>학생 앱 로그인은 이 전화번호의 뒷 4자리로 인증됩니다.</p>
@@ -1548,7 +1557,8 @@ function StudentTimetable({ data, setData, studentId }) {
 
 // ================= 반별 정규 수업 시간표 (관리자/강사 등록 → 학생 강의실에 표시) =================
 function ClassScheduleTab({ data, setData, scopeClassGroups }) {
-  const allGroups = [...new Set(data.students.map(s => s.classGroup).filter(Boolean))].sort();
+  const extraGroups = [...new Set(data.students.map(s => s.classGroup).filter(Boolean))].filter(g => !CLASS_GROUPS.includes(g)).sort();
+  const allGroups = [...CLASS_GROUPS, ...extraGroups];
   const groups = scopeClassGroups && scopeClassGroups.length ? allGroups.filter(g => scopeClassGroups.includes(g)) : allGroups;
   const [selectedGroup, setSelectedGroup] = useState(groups[0] || "");
   const [selectedDays, setSelectedDays] = useState([]);
@@ -1875,8 +1885,12 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
           <ul className="flex flex-col gap-2">
             {recentHomeworks.map(h => (
               <li key={h.id} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
-                <span className="text-sm" style={{ color: "#4a4332" }}>{h.date} · {h.title}</span>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: h.submitted ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>{h.submitted ? "제출" : "미제출"}</span>
+                <div className="text-sm" style={{ color: "#4a4332" }}>
+                  <div>{h.date} · {h.title}</div>
+                  {h.submitted && h.submittedAt && <div className="text-xs" style={{ color: "#7a6f52" }}>{new Date(h.submittedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 제출</div>}
+                  {!h.submitted && h.dueDate && <div className="text-xs" style={{ color: h.dueDate < todayStr() ? "var(--coral)" : "#7a6f52" }}>{h.dueDate < todayStr() ? "기한 초과" : `기한 ${h.dueDate}`}</div>}
+                </div>
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: h.submitted ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>{h.submitted ? "제출" : "미제출"}</span>
               </li>
             ))}
           </ul>
