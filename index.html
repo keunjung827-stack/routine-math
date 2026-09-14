@@ -69,6 +69,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
+// 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
+const APP_VERSION = "2026-09-14-1";
+
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
 function localKey(key, shared) { return `routine_math_storage:${shared ? "shared" : "local"}:${key}`; }
@@ -136,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -2957,6 +2961,25 @@ function App() {
   const [view, setView] = useState("gate");
   const [studentId, setStudentId] = useState(null);
   const [teacherId, setTeacherId] = useState(null);
+
+  // 새 버전이 배포되면 자동으로 최신 코드를 다시 받아옴 (학생 기기에서 캐시 지우기 불필요)
+  useEffect(() => {
+    const checkVersion = async () => {
+      try {
+        const res = await fetch("./version.txt", { cache: "no-store" });
+        if (!res.ok) return;
+        const v = (await res.text()).trim();
+        if (v && typeof APP_VERSION !== "undefined" && v !== APP_VERSION) {
+          const url = new URL(window.location.href);
+          url.searchParams.set("v", v);
+          window.location.replace(url.toString());
+        }
+      } catch (e) { /* version.txt 없음 또는 네트워크 오류 - 무시 */ }
+    };
+    checkVersion();
+    const interval = setInterval(checkVersion, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (document.getElementById("routine-font-link")) return;
