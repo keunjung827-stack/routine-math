@@ -142,6 +142,7 @@ window.storage = {
 
 
 
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const APP_ICON_DATA_URL = "";
 
@@ -270,15 +271,41 @@ function useAppData() {
   const [data, setDataState] = useState(emptyData());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const dataRef = useRef(data);
+  const savingRef = useRef(saving);
+  useEffect(() => { dataRef.current = data; }, [data]);
+  useEffect(() => { savingRef.current = saving; }, [saving]);
+
+  const fetchLatest = async () => {
+    try {
+      const res = await window.storage.get(STORAGE_KEY, true);
+      if (res && res.value) {
+        const parsed = { ...emptyData(), ...JSON.parse(res.value) };
+        if (JSON.stringify(parsed) !== JSON.stringify(dataRef.current)) {
+          setDataState(parsed);
+        }
+      }
+    } catch (e) { /* 최초 실행 또는 네트워크 오류 - 무시 */ }
+  };
 
   useEffect(() => {
     (async () => {
-      try {
-        const res = await window.storage.get(STORAGE_KEY, true);
-        if (res && res.value) setDataState({ ...emptyData(), ...JSON.parse(res.value) });
-      } catch (e) { /* first run */ }
+      await fetchLatest();
       setLoading(false);
     })();
+  }, []);
+
+  // 화면을 오래 켜놔도 "옛날 데이터"로 덮어쓰지 않도록, 주기적으로/탭이 다시 보일 때 최신 데이터를 다시 받아옴
+  useEffect(() => {
+    const interval = setInterval(() => { if (!savingRef.current) fetchLatest(); }, 20000);
+    const onVisible = () => { if (document.visibilityState === "visible" && !savingRef.current) fetchLatest(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
   }, []);
 
   const setData = async (next) => {
