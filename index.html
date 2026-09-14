@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-3";
+const APP_VERSION = "2026-09-14-4";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -2175,7 +2176,9 @@ function AttendanceCutoffEditor({ data, setData, groups }) {
 function AttendanceTab({ data, setData, scopeClassGroups }) {
   const [date, setDate] = useState(todayStr());
   const students = studentsInScope(data.students, scopeClassGroups);
-  const groups = [...new Set(students.map(s => s.classGroup).filter(Boolean))].sort();
+  const extraGroups = [...new Set(data.students.map(s => s.classGroup).filter(Boolean))].filter(g => !CLASS_GROUPS.includes(g)).sort();
+  const allGroups = [...CLASS_GROUPS, ...extraGroups];
+  const groups = scopeClassGroups && scopeClassGroups.length ? allGroups.filter(g => scopeClassGroups.includes(g)) : allGroups;
   const entryFor = (studentId) => data.attendance.find(a => a.studentId === studentId && a.date === date);
 
   const setStatus = (studentId, status) => {
