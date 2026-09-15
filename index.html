@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-6";
+const APP_VERSION = "2026-09-14-8";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,8 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
 
 
 
@@ -1006,7 +1008,8 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
     const score = Math.round(rates.reduce((a, b) => a + b, 0) / rates.length);
     const routine = { id: uid(), studentId, date, items, testName, testScore: testScore ? Number(testScore) : null, comment, score, createdAt: new Date().toISOString() };
 
-    const message = buildDailyReportText(student, date, items, testName, testScore, comment, score);
+    const attendance = data.attendance.find(a => a.studentId === studentId && a.date === date);
+    const message = buildDailyReportText(student, date, items, testName, testScore, comment, score, attendance);
     const alert = { id: uid(), studentId, sourceKey: `routine:${routine.id}`, kind: "오늘의 루틴", message, status: "대기", createdAt: new Date().toISOString() };
 
     setData({ ...data, routines: [...data.routines, routine], alerts: [...data.alerts, alert] });
@@ -1066,7 +1069,11 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
               <li key={r.id} className="p-3 rounded-lg" style={{ background: "#efe6d0" }}>
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: "#2b2417" }}><b>{studentName(r.studentId)}</b> · {r.date}</span>
-                  <span className="text-sm font-bold" style={{ color: r.score < PASS_RATE ? "var(--coral)" : "var(--gold)" }}>{r.score}점</span>
+                  <div className="flex gap-1">
+                    {(r.items || []).filter(it => it.kind === "choice" && it.result).map(it => (
+                      <span key={it.key} className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#e4d8ba", color: "#5c543e" }}>{it.result}</span>
+                    ))}
+                  </div>
                 </div>
                 {r.testName && <div className="text-xs mt-1" style={{ color: "#7a6f52" }}>{r.testName} {r.testScore}점</div>}
               </li>
@@ -1079,10 +1086,16 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
 }
 
 // ================= 주간 루틴 =================
-function buildDailyReportText(student, date, items, testName, testScore, comment, score) {
+function buildDailyReportText(student, date, items, testName, testScore, comment, score, attendance) {
   const lines = [];
   lines.push("🌱 오늘의 ROUTINE");
   lines.push(`${student?.name || ""} / ${student?.grade || ""}`);
+  lines.push("");
+  if (attendance) {
+    lines.push(`출결: ${attendance.status}${attendance.time ? ` (${attendance.time})` : ""}`);
+  } else {
+    lines.push("출결: 기록 없음");
+  }
   lines.push("");
   lines.push("오늘 할 일 · 목표 · 결과");
   items.forEach(it => {
@@ -1106,8 +1119,6 @@ function buildDailyReportText(student, date, items, testName, testScore, comment
     lines.push("선생님 코멘트");
     lines.push(comment);
   }
-  lines.push("");
-  lines.push(`종합 점수 ${score}점`);
   return lines.join("\n");
 }
 
@@ -1932,7 +1943,11 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
             {recentRoutines.map(r => (
               <li key={r.id} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
                 <span className="text-xs" style={{ color: "#7a6f52" }}>{r.date}</span>
-                <span className="text-sm font-bold" style={{ color: r.score < PASS_RATE ? "var(--coral)" : "var(--gold)" }}>{r.score}점</span>
+                <div className="flex gap-1">
+                  {(r.items || []).filter(it => it.kind === "choice" && it.result).map(it => (
+                    <span key={it.key} className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#e4d8ba", color: "#5c543e" }}>{it.result}</span>
+                  ))}
+                </div>
               </li>
             ))}
           </ul>
