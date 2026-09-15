@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-8";
+const APP_VERSION = "2026-09-14-10";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -154,6 +154,8 @@ window.storage = {
 
 
 
+
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const APP_ICON_DATA_URL = "";
 
@@ -171,8 +173,8 @@ const ATT_STATUSES = ["출석", "지각", "결석"];
 const ROUTINE_ITEM_DEFS = [
   { key: "class", label: "진도수업", kind: "choice", options: [{ value: "N", label: "새로 배움" }, { value: "R", label: "복습 중" }], unit: "" },
   { key: "review", label: "개념복습", kind: "choice", options: [{ value: "P", label: "진행중" }, { value: "C", label: "완료" }], unit: "" },
-  { key: "practice", label: "문제풀이", kind: "number", unit: "문제" },
-  { key: "wrong", label: "오답", kind: "number", unit: "문제" },
+  { key: "practice", label: "문제풀이", kind: "count", unit: "문제" },
+  { key: "wrong", label: "오답", kind: "count", unit: "문제" },
   { key: "homework", label: "숙제", kind: "boolean", unit: "" },
 ];
 function studentsInScope(students, classGroups) {
@@ -985,7 +987,7 @@ function TestsTab({ data, setData, scopeClassGroups }) {
 function DailyRoutineTab({ data, setData, scopeClassGroups }) {
   const [studentId, setStudentId] = useState("");
   const [date, setDate] = useState(todayStr());
-  const [items, setItems] = useState(ROUTINE_ITEM_DEFS.map(d => ({ ...d, target: d.kind === "number" ? "" : true, result: d.kind === "number" ? "" : (d.kind === "choice" ? "" : false) })));
+  const [items, setItems] = useState(ROUTINE_ITEM_DEFS.map(d => ({ ...d, result: d.kind === "count" ? "" : (d.kind === "choice" ? "" : false) })));
   const [testName, setTestName] = useState("");
   const [testScore, setTestScore] = useState("");
   const [comment, setComment] = useState("");
@@ -994,27 +996,39 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
 
   const updateItem = (key, field, value) => setItems(items.map(it => it.key === key ? { ...it, [field]: value } : it));
 
+  // 그날 그 학생 앞으로 등록된 숙제가 실제로 제출됐는지 자동으로 판단 (강사가 따로 체크할 필요 없음)
+  const todaysHomeworks = studentId ? data.homeworks.filter(h => h.studentId === studentId && h.date === date) : [];
+  const homeworkStatus = todaysHomeworks.length === 0 ? null : todaysHomeworks.every(h => h.submitted);
+
+  const practiceItem = items.find(it => it.key === "practice");
+  const wrongItem = items.find(it => it.key === "wrong");
+  const practiceCount = Number(practiceItem?.result) || 0;
+  const wrongCount = Number(wrongItem?.result) || 0;
+  const accuracy = practiceCount > 0 ? Math.max(0, Math.min(100, Math.round(((practiceCount - wrongCount) / practiceCount) * 100))) : null;
+
   const rateOf = (it) => {
+    if (it.key === "homework") return homeworkStatus === null ? null : (homeworkStatus ? 100 : 0);
+    if (it.key === "wrong") return null; // 정답률로 따로 집계, 완료율 평균에는 안 넣음
+    if (it.key === "practice") return Number(it.result) > 0 ? 100 : 0;
     if (it.kind === "boolean" || it.kind === "choice") return it.result ? 100 : 0;
-    const t = Number(it.target), r = Number(it.result);
-    if (!t) return 0;
-    return Math.max(0, Math.min(100, Math.round((r / t) * 100)));
+    return 0;
   };
 
   const save = () => {
     if (!studentId) return;
     const student = data.students.find(s => s.id === studentId);
-    const rates = items.map(rateOf);
-    const score = Math.round(rates.reduce((a, b) => a + b, 0) / rates.length);
-    const routine = { id: uid(), studentId, date, items, testName, testScore: testScore ? Number(testScore) : null, comment, score, createdAt: new Date().toISOString() };
+    const itemsToSave = items.map(it => it.key === "homework" ? { ...it, result: homeworkStatus } : it);
+    const rates = itemsToSave.map(rateOf).filter(r => r !== null);
+    const score = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : 0;
+    const routine = { id: uid(), studentId, date, items: itemsToSave, testName, testScore: testScore ? Number(testScore) : null, comment, score, createdAt: new Date().toISOString() };
 
     const attendance = data.attendance.find(a => a.studentId === studentId && a.date === date);
-    const message = buildDailyReportText(student, date, items, testName, testScore, comment, score, attendance);
+    const message = buildDailyReportText(student, date, itemsToSave, testName, testScore, comment, score, attendance);
     const alert = { id: uid(), studentId, sourceKey: `routine:${routine.id}`, kind: "오늘의 루틴", message, status: "대기", createdAt: new Date().toISOString() };
 
     setData({ ...data, routines: [...data.routines, routine], alerts: [...data.alerts, alert] });
     setTestName(""); setTestScore(""); setComment("");
-    setItems(ROUTINE_ITEM_DEFS.map(d => ({ ...d, target: d.kind === "number" ? "" : true, result: d.kind === "number" ? "" : (d.kind === "choice" ? "" : false) })));
+    setItems(ROUTINE_ITEM_DEFS.map(d => ({ ...d, result: d.kind === "count" ? "" : (d.kind === "choice" ? "" : false) })));
   };
 
   const mine = data.routines.filter(r => studentsInScope(data.students, scopeClassGroups).some(s => s.id === r.studentId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10);
@@ -1029,29 +1043,55 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
         </div>
         <div className="flex flex-col gap-2">
           <p className="text-[11px]" style={{ color: "#8a7f5e" }}>진도수업: N=새로 배움 · R=복습 중 &nbsp;|&nbsp; 개념복습: P=진행중 · C=완료</p>
-          {items.map(it => (
-            <div key={it.key} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: "#efe6d0" }}>
-              <span className="text-sm w-16 flex-shrink-0" style={{ color: "#2b2417" }}>{it.label}</span>
-              {it.kind === "number" ? (
-                <>
-                  <input type="number" min="0" className={inputCls} style={inputStyle} placeholder="목표" value={it.target} onChange={e => updateItem(it.key, "target", e.target.value)} />
-                  <span className="text-xs" style={{ color: "#7a6f52" }}>{it.unit}</span>
-                  <input type="number" min="0" className={inputCls} style={inputStyle} placeholder="결과" value={it.result} onChange={e => updateItem(it.key, "result", e.target.value)} />
-                  <span className="text-xs" style={{ color: "#7a6f52" }}>{it.unit}</span>
-                </>
-              ) : it.kind === "choice" ? (
-                <div className="ml-auto flex gap-1.5">
-                  {it.options.map(opt => (
-                    <button key={opt.value} onClick={() => updateItem(it.key, "result", opt.value)} className="px-3 py-1.5 rounded-full text-xs font-bold"
-                      style={{ background: it.result === opt.value ? "#4c8c5f" : "#e4d8ba", color: it.result === opt.value ? "#fff" : "#5c543e" }}>{opt.value}</button>
-                  ))}
+          {items.map(it => {
+            if (it.key === "homework") {
+              return (
+                <div key={it.key} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+                  <span className="text-sm w-16 flex-shrink-0" style={{ color: "#2b2417" }}>{it.label}</span>
+                  <span className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold"
+                    style={{ background: homeworkStatus === null ? "#e4d8ba" : homeworkStatus ? "#4c8c5f" : "var(--coral)", color: homeworkStatus === null ? "#5c543e" : "#fff" }}>
+                    {homeworkStatus === null ? "해당없음" : homeworkStatus ? "제출완료" : "미제출"}
+                  </span>
                 </div>
-              ) : (
-                <button onClick={() => updateItem(it.key, "result", !it.result)} className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold"
-                  style={{ background: it.result ? "#4c8c5f" : "#e4d8ba", color: it.result ? "#fff" : "#5c543e" }}>{it.result ? "완료" : "미완료"}</button>
-              )}
+              );
+            }
+            if (it.kind === "count") {
+              return (
+                <div key={it.key} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+                  <span className="text-sm w-16 flex-shrink-0" style={{ color: "#2b2417" }}>{it.label}</span>
+                  <input type="number" min="0" className={inputCls} style={inputStyle} placeholder="0" value={it.result} onChange={e => updateItem(it.key, "result", e.target.value)} />
+                  <span className="text-xs flex-shrink-0" style={{ color: "#7a6f52" }}>{it.unit}</span>
+                </div>
+              );
+            }
+            return (
+              <div key={it.key} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+                <span className="text-sm w-16 flex-shrink-0" style={{ color: "#2b2417" }}>{it.label}</span>
+                {it.kind === "choice" ? (
+                  <div className="ml-auto flex gap-1.5">
+                    {it.options.map(opt => (
+                      <button key={opt.value} onClick={() => updateItem(it.key, "result", opt.value)} className="px-3 py-1.5 rounded-full text-xs font-bold"
+                        style={{ background: it.result === opt.value ? "#4c8c5f" : "#e4d8ba", color: it.result === opt.value ? "#fff" : "#5c543e" }}>{opt.value}</button>
+                    ))}
+                  </div>
+                ) : (
+                  <button onClick={() => updateItem(it.key, "result", !it.result)} className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold"
+                    style={{ background: it.result ? "#4c8c5f" : "#e4d8ba", color: it.result ? "#fff" : "#5c543e" }}>{it.result ? "완료" : "미완료"}</button>
+                )}
+              </div>
+            );
+          })}
+          {practiceCount > 0 && (
+            <div className="p-3 rounded-lg flex flex-col gap-1.5" style={{ background: "#fffcf6", border: "1px solid #e4d8ba" }}>
+              <div className="flex items-center justify-between text-sm">
+                <span style={{ color: "#2b2417" }}>오늘 {practiceCount}문제 풀이 · 오답 {wrongCount}문제</span>
+                <span className="font-bold" style={{ color: accuracy >= 80 ? "#4c8c5f" : accuracy >= 60 ? "var(--gold)" : "var(--coral)" }}>정답률 {accuracy}%</span>
+              </div>
+              <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: "#f8e3c9" }}>
+                <div className="h-full rounded-full" style={{ width: `${accuracy}%`, background: accuracy >= 80 ? "#4c8c5f" : accuracy >= 60 ? "var(--gold)" : "var(--coral)" }} />
+              </div>
             </div>
-          ))}
+          )}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="오늘의 평가 (시험명)"><input className={inputCls} style={inputStyle} value={testName} onChange={e => setTestName(e.target.value)} placeholder="예: 함수 단원 TEST" /></Field>
@@ -1059,25 +1099,32 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
         </div>
         <Field label="선생님 코멘트"><textarea rows={2} className={inputCls} style={inputStyle} value={comment} onChange={e => setComment(e.target.value)} placeholder="오늘 개념 이해는 좋았습니다..." /></Field>
         <button onClick={save} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />저장하고 알림 생성</button>
-        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>저장하면 학부모 알림함(소통)에 항상 대기 알림이 새로 생성돼요. 관리자가 내용을 확인한 뒤 복사해서 직접 발송하는 구조라, 검토 없이 바로 나가지 않아요.</p>
+        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>저장하면 학부모 알림함(소통)에 항상 대기 알림이 새로 생성돼요. 관리자가 내용을 확인한 뒤 복사해서 직접 발송하는 구조라, 검토 없이 바로 나가지 않아요. 숙제 항목은 학생이 실제로 제출했는지를 자동으로 가져와요.</p>
       </div>
       <div className="rounded-2xl p-4" style={panel}>
         <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>최근 기록 ({mine.length})</h3>
         {mine.length === 0 ? <EmptyState text="등록된 기록이 없습니다." /> : (
           <ul className="flex flex-col gap-2">
-            {mine.map(r => (
-              <li key={r.id} className="p-3 rounded-lg" style={{ background: "#efe6d0" }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm" style={{ color: "#2b2417" }}><b>{studentName(r.studentId)}</b> · {r.date}</span>
-                  <div className="flex gap-1">
-                    {(r.items || []).filter(it => it.kind === "choice" && it.result).map(it => (
-                      <span key={it.key} className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#e4d8ba", color: "#5c543e" }}>{it.result}</span>
-                    ))}
+            {mine.map(r => {
+              const p = (r.items || []).find(it => it.key === "practice");
+              const w = (r.items || []).find(it => it.key === "wrong");
+              const pc = Number(p?.result) || 0, wc = Number(w?.result) || 0;
+              const acc = pc > 0 ? Math.round(((pc - wc) / pc) * 100) : null;
+              return (
+                <li key={r.id} className="p-3 rounded-lg" style={{ background: "#efe6d0" }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm" style={{ color: "#2b2417" }}><b>{studentName(r.studentId)}</b> · {r.date}</span>
+                    <div className="flex gap-1">
+                      {(r.items || []).filter(it => it.kind === "choice" && it.result).map(it => (
+                        <span key={it.key} className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#e4d8ba", color: "#5c543e" }}>{it.result}</span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-                {r.testName && <div className="text-xs mt-1" style={{ color: "#7a6f52" }}>{r.testName} {r.testScore}점</div>}
-              </li>
-            ))}
+                  {pc > 0 && <div className="text-xs mt-1" style={{ color: "#7a6f52" }}>{pc}문제 풀이 · 오답 {wc} · 정답률 {acc}%</div>}
+                  {r.testName && <div className="text-xs mt-1" style={{ color: "#7a6f52" }}>{r.testName} {r.testScore}점</div>}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
@@ -1097,15 +1144,24 @@ function buildDailyReportText(student, date, items, testName, testScore, comment
     lines.push("출결: 기록 없음");
   }
   lines.push("");
-  lines.push("오늘 할 일 · 목표 · 결과");
+  lines.push("오늘 할 일 · 결과");
+  const practiceItem = items.find(it => it.key === "practice");
+  const wrongItem = items.find(it => it.key === "wrong");
+  const pc = Number(practiceItem?.result) || 0, wc = Number(wrongItem?.result) || 0;
   items.forEach(it => {
-    if (it.kind === "boolean") {
-      lines.push(`${it.label} · 완료 · ${it.result ? "✅" : "❌"}`);
+    if (it.key === "wrong") return; // 문제풀이 줄에서 함께 표기
+    if (it.key === "practice") {
+      if (pc > 0) {
+        const acc = Math.max(0, Math.min(100, Math.round(((pc - wc) / pc) * 100)));
+        lines.push(`문제풀이 · ${pc}문제 (오답 ${wc}문제 · 정답률 ${acc}%)`);
+      } else {
+        lines.push(`문제풀이 · 기록 없음`);
+      }
+    } else if (it.kind === "boolean") {
+      lines.push(`${it.label} · ${it.result === null ? "해당없음" : it.result ? "✅ 완료" : "❌ 미완료"}`);
     } else if (it.kind === "choice") {
       const opt = (it.options || []).find(o => o.value === it.result);
       lines.push(`${it.label} · ${opt ? `${opt.value} (${opt.label})` : "-"}`);
-    } else {
-      lines.push(`${it.label} · ${it.target || 0}${it.unit} · ${it.result || 0}${it.unit}`);
     }
   });
   if (testName) {
@@ -1122,7 +1178,7 @@ function buildDailyReportText(student, date, items, testName, testScore, comment
   return lines.join("\n");
 }
 
-function buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg) {
+function buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy) {
   const lines = [];
   lines.push("📊 주간 ROUTINE");
   lines.push(`${student?.name || ""} / ${student?.grade || ""}`);
@@ -1133,6 +1189,8 @@ function buildWeeklyReportText(student, weekStart, itemAverages, overall, testAv
   itemAverages.forEach(it => {
     lines.push(`${it.label} ${it.avg === null ? "기록없음" : `${it.avg}%`}`);
   });
+  if (avgPracticeCount !== null) lines.push(`하루 평균 문제풀이 ${avgPracticeCount}문제`);
+  if (avgAccuracy !== null) lines.push(`평균 정답률 ${avgAccuracy}%`);
   if (testAvg !== null) lines.push(`테스트 평균 ${testAvg}점`);
   return lines.join("\n");
 }
@@ -1141,31 +1199,44 @@ function weeklyRoutineStats(data, studentId, weekStart) {
   const weekRoutines = data.routines.filter(r => r.studentId === studentId && mondayOf(r.date) === weekStart);
   const perItem = {};
   ROUTINE_ITEM_DEFS.forEach(def => { perItem[def.key] = []; });
+  const practiceCounts = [];
+  const accuracies = [];
   weekRoutines.forEach(r => {
-    (r.items || []).forEach(it => {
-      const rate = (it.kind === "boolean" || it.kind === "choice")
-        ? (it.result ? 100 : 0)
-        : (Number(it.target) ? Math.max(0, Math.min(100, Math.round((Number(it.result) / Number(it.target)) * 100))) : 0);
+    const items = r.items || [];
+    const practiceItem = items.find(it => it.key === "practice");
+    const wrongItem = items.find(it => it.key === "wrong");
+    const pc = Number(practiceItem?.result) || 0;
+    const wc = Number(wrongItem?.result) || 0;
+    if (pc > 0) {
+      practiceCounts.push(pc);
+      accuracies.push(Math.max(0, Math.min(100, Math.round(((pc - wc) / pc) * 100))));
+    }
+    items.forEach(it => {
+      if (it.key === "wrong" || it.key === "practice") return; // 따로 집계 (평균 문제 수 · 정답률)
+      if (it.key === "homework" && it.result === null) return; // 숙제가 없던 날은 집계에서 제외
+      const rate = (it.kind === "boolean" || it.kind === "choice") ? (it.result ? 100 : 0) : 0;
       if (perItem[it.key]) perItem[it.key].push(rate);
     });
   });
-  const itemAverages = ROUTINE_ITEM_DEFS.map(def => {
+  const itemAverages = ROUTINE_ITEM_DEFS.filter(def => def.key !== "wrong" && def.key !== "practice").map(def => {
     const arr = perItem[def.key];
     return { ...def, avg: arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null };
   });
+  const avgPracticeCount = practiceCounts.length ? Math.round(practiceCounts.reduce((a, b) => a + b, 0) / practiceCounts.length) : null;
+  const avgAccuracy = accuracies.length ? Math.round(accuracies.reduce((a, b) => a + b, 0) / accuracies.length) : null;
   const validAverages = itemAverages.filter(x => x.avg !== null).map(x => x.avg);
   const overall = validAverages.length ? Math.round(validAverages.reduce((a, b) => a + b, 0) / validAverages.length) : null;
   const testScores = weekRoutines.filter(r => r.testScore != null).map(r => r.testScore);
   const testAvg = testScores.length ? Math.round(testScores.reduce((a, b) => a + b, 0) / testScores.length) : null;
-  return { weekRoutines, itemAverages, overall, testAvg };
+  return { weekRoutines, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy };
 }
 
 function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButton }) {
   const student = data.students.find(s => s.id === studentId);
-  const { weekRoutines, itemAverages, overall, testAvg } = weeklyRoutineStats(data, studentId, weekStart);
+  const { weekRoutines, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy } = weeklyRoutineStats(data, studentId, weekStart);
 
   const sendReport = () => {
-    const message = buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg);
+    const message = buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy);
     const alert = { id: uid(), studentId, sourceKey: `weekly:${studentId}:${weekStart}`, kind: "주간 루틴", message, status: "대기", createdAt: new Date().toISOString() };
     setData({ ...data, alerts: [...data.alerts, alert] });
   };
@@ -1186,6 +1257,18 @@ function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButt
               <span className="text-sm font-bold" style={{ color: it.avg !== null && it.avg < PASS_RATE ? "var(--coral)" : "var(--gold)" }}>{it.avg === null ? "기록없음" : `${it.avg}%`}</span>
             </li>
           ))}
+          {avgPracticeCount !== null && (
+            <li className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+              <span className="text-sm" style={{ color: "#2b2417" }}>하루 평균 문제풀이</span>
+              <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>{avgPracticeCount}문제</span>
+            </li>
+          )}
+          {avgAccuracy !== null && (
+            <li className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+              <span className="text-sm" style={{ color: "#2b2417" }}>평균 정답률</span>
+              <span className="text-sm font-bold" style={{ color: avgAccuracy < PASS_RATE ? "var(--coral)" : "var(--gold)" }}>{avgAccuracy}%</span>
+            </li>
+          )}
           {testAvg !== null && (
             <li className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
               <span className="text-sm" style={{ color: "#2b2417" }}>테스트 평균</span>
@@ -2631,6 +2714,66 @@ function TeachersTab({ data, setData }) {
 }
 
 // ================= 학생 모드 =================
+// 순공 타이머: 시작/멈춤을 누르면 쉬는 시간은 자동으로 빠지고, 끝나면 오늘 플래너에 자동 기록됨
+function StudyTimer({ data, setData, studentId }) {
+  const [running, setRunning] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [segmentStart, setSegmentStart] = useState(null);
+  const [subject, setSubject] = useState("");
+  const [, forceTick] = useState(0);
+
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => forceTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [running]);
+
+  const currentElapsedMs = elapsedMs + (running && segmentStart ? (Date.now() - segmentStart) : 0);
+  const totalSeconds = Math.floor(currentElapsedMs / 1000);
+  const hh = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+  const mm = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
+  const ss = String(totalSeconds % 60).padStart(2, "0");
+
+  const start = () => { setSegmentStart(Date.now()); setRunning(true); };
+  const pause = () => { setElapsedMs(elapsedMs + (Date.now() - segmentStart)); setSegmentStart(null); setRunning(false); };
+  const reset = () => { setElapsedMs(0); setSegmentStart(null); setRunning(false); };
+
+  const saveToPlanner = () => {
+    const totalMinutes = Math.round(currentElapsedMs / 60000);
+    if (totalMinutes < 1) return;
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const end = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const startDate = new Date(now.getTime() - totalMinutes * 60000);
+    const startStr = `${pad(startDate.getHours())}:${pad(startDate.getMinutes())}`;
+    setData({ ...data, plannerBlocks: [...data.plannerBlocks, { id: uid(), studentId, date: todayStr(), start: startStr, end, subject: subject.trim() || "타이머 공부", done: true }] });
+    reset();
+    setSubject("");
+  };
+
+  return (
+    <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+      <h3 className="font-bold flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}>⏱ 순공 타이머</h3>
+      <div className="text-center py-3">
+        <div className="text-4xl font-bold tabular-nums" style={{ color: "#2b2417", fontFamily: "'Noto Serif KR', serif" }}>{hh}:{mm}:{ss}</div>
+      </div>
+      <Field label="무슨 공부 (선택)"><input className={inputCls} style={inputStyle} value={subject} onChange={e => setSubject(e.target.value)} placeholder="예: 공통수학2 복습" /></Field>
+      {!running ? (
+        <button onClick={start} className="w-full py-3 rounded-xl text-sm font-bold" style={btnGold}>{currentElapsedMs > 0 ? "이어서 공부하기" : "공부 시작"}</button>
+      ) : (
+        <button onClick={pause} className="w-full py-3 rounded-xl text-sm font-bold" style={{ background: "var(--coral)", color: "#fff" }}>쉬는 중 (탭해서 멈춤)</button>
+      )}
+      {currentElapsedMs > 0 && !running && (
+        <div className="flex gap-2">
+          <button onClick={saveToPlanner} className="flex-1 py-2.5 rounded-lg text-sm font-semibold" style={{ background: "#4c8c5f", color: "#fff" }}>순공시간으로 저장</button>
+          <button onClick={reset} className="px-4 py-2.5 rounded-lg text-sm" style={{ border: "1px solid #ddcda0", color: "#5c543e" }}>초기화</button>
+        </div>
+      )}
+      <p className="text-[11px]" style={{ color: "#8a7f5e" }}>공부할 때 "공부 시작", 쉴 때 눌러서 멈추고, 다시 누르면 이어서 계산돼요. 다 끝나면 "순공시간으로 저장"을 누르면 오늘 플래너에 자동으로 기록돼요.</p>
+    </div>
+  );
+}
+
 function StudentPlannerTimetable({ data, setData, studentId }) {
   const [date, setDate] = useState(todayStr());
   const [start, setStart] = useState("");
@@ -2651,6 +2794,7 @@ function StudentPlannerTimetable({ data, setData, studentId }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <StudyTimer data={data} setData={setData} studentId={studentId} />
       <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
         <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>플래너 타임테이블</h3>
         <Field label="날짜"><input type="date" className={inputCls} style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
