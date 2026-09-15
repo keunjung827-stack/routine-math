@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-4";
+const APP_VERSION = "2026-09-14-6";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -150,6 +150,8 @@ window.storage = {
 
 
 
+
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const APP_ICON_DATA_URL = "";
 
@@ -165,8 +167,8 @@ const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 const TEST_TYPES = ["일일테스트", "주간테스트", "월말테스트", "누적테스트"];
 const ATT_STATUSES = ["출석", "지각", "결석"];
 const ROUTINE_ITEM_DEFS = [
-  { key: "class", label: "판서수업", kind: "boolean", unit: "" },
-  { key: "review", label: "개념복습", kind: "boolean", unit: "" },
+  { key: "class", label: "진도수업", kind: "choice", options: [{ value: "N", label: "새로 배움" }, { value: "R", label: "복습 중" }], unit: "" },
+  { key: "review", label: "개념복습", kind: "choice", options: [{ value: "P", label: "진행중" }, { value: "C", label: "완료" }], unit: "" },
   { key: "practice", label: "문제풀이", kind: "number", unit: "문제" },
   { key: "wrong", label: "오답", kind: "number", unit: "문제" },
   { key: "homework", label: "숙제", kind: "boolean", unit: "" },
@@ -981,7 +983,7 @@ function TestsTab({ data, setData, scopeClassGroups }) {
 function DailyRoutineTab({ data, setData, scopeClassGroups }) {
   const [studentId, setStudentId] = useState("");
   const [date, setDate] = useState(todayStr());
-  const [items, setItems] = useState(ROUTINE_ITEM_DEFS.map(d => ({ ...d, target: d.kind === "number" ? "" : true, result: d.kind === "number" ? "" : false })));
+  const [items, setItems] = useState(ROUTINE_ITEM_DEFS.map(d => ({ ...d, target: d.kind === "number" ? "" : true, result: d.kind === "number" ? "" : (d.kind === "choice" ? "" : false) })));
   const [testName, setTestName] = useState("");
   const [testScore, setTestScore] = useState("");
   const [comment, setComment] = useState("");
@@ -991,7 +993,7 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
   const updateItem = (key, field, value) => setItems(items.map(it => it.key === key ? { ...it, [field]: value } : it));
 
   const rateOf = (it) => {
-    if (it.kind === "boolean") return it.result ? 100 : 0;
+    if (it.kind === "boolean" || it.kind === "choice") return it.result ? 100 : 0;
     const t = Number(it.target), r = Number(it.result);
     if (!t) return 0;
     return Math.max(0, Math.min(100, Math.round((r / t) * 100)));
@@ -1009,7 +1011,7 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
 
     setData({ ...data, routines: [...data.routines, routine], alerts: [...data.alerts, alert] });
     setTestName(""); setTestScore(""); setComment("");
-    setItems(ROUTINE_ITEM_DEFS.map(d => ({ ...d, target: d.kind === "number" ? "" : true, result: d.kind === "number" ? "" : false })));
+    setItems(ROUTINE_ITEM_DEFS.map(d => ({ ...d, target: d.kind === "number" ? "" : true, result: d.kind === "number" ? "" : (d.kind === "choice" ? "" : false) })));
   };
 
   const mine = data.routines.filter(r => studentsInScope(data.students, scopeClassGroups).some(s => s.id === r.studentId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10);
@@ -1023,6 +1025,7 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
           <Field label="날짜"><input type="date" className={inputCls} style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
         </div>
         <div className="flex flex-col gap-2">
+          <p className="text-[11px]" style={{ color: "#8a7f5e" }}>진도수업: N=새로 배움 · R=복습 중 &nbsp;|&nbsp; 개념복습: P=진행중 · C=완료</p>
           {items.map(it => (
             <div key={it.key} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: "#efe6d0" }}>
               <span className="text-sm w-16 flex-shrink-0" style={{ color: "#2b2417" }}>{it.label}</span>
@@ -1033,6 +1036,13 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
                   <input type="number" min="0" className={inputCls} style={inputStyle} placeholder="결과" value={it.result} onChange={e => updateItem(it.key, "result", e.target.value)} />
                   <span className="text-xs" style={{ color: "#7a6f52" }}>{it.unit}</span>
                 </>
+              ) : it.kind === "choice" ? (
+                <div className="ml-auto flex gap-1.5">
+                  {it.options.map(opt => (
+                    <button key={opt.value} onClick={() => updateItem(it.key, "result", opt.value)} className="px-3 py-1.5 rounded-full text-xs font-bold"
+                      style={{ background: it.result === opt.value ? "#4c8c5f" : "#e4d8ba", color: it.result === opt.value ? "#fff" : "#5c543e" }}>{opt.value}</button>
+                  ))}
+                </div>
               ) : (
                 <button onClick={() => updateItem(it.key, "result", !it.result)} className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold"
                   style={{ background: it.result ? "#4c8c5f" : "#e4d8ba", color: it.result ? "#fff" : "#5c543e" }}>{it.result ? "완료" : "미완료"}</button>
@@ -1078,6 +1088,9 @@ function buildDailyReportText(student, date, items, testName, testScore, comment
   items.forEach(it => {
     if (it.kind === "boolean") {
       lines.push(`${it.label} · 완료 · ${it.result ? "✅" : "❌"}`);
+    } else if (it.kind === "choice") {
+      const opt = (it.options || []).find(o => o.value === it.result);
+      lines.push(`${it.label} · ${opt ? `${opt.value} (${opt.label})` : "-"}`);
     } else {
       lines.push(`${it.label} · ${it.target || 0}${it.unit} · ${it.result || 0}${it.unit}`);
     }
@@ -1119,7 +1132,7 @@ function weeklyRoutineStats(data, studentId, weekStart) {
   ROUTINE_ITEM_DEFS.forEach(def => { perItem[def.key] = []; });
   weekRoutines.forEach(r => {
     (r.items || []).forEach(it => {
-      const rate = it.kind === "boolean"
+      const rate = (it.kind === "boolean" || it.kind === "choice")
         ? (it.result ? 100 : 0)
         : (Number(it.target) ? Math.max(0, Math.min(100, Math.round((Number(it.result) / Number(it.target)) * 100))) : 0);
       if (perItem[it.key]) perItem[it.key].push(rate);
