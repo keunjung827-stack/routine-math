@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-10";
+const APP_VERSION = "2026-09-14-11";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -156,6 +156,7 @@ window.storage = {
 
 
 
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const APP_ICON_DATA_URL = "";
 
@@ -202,6 +203,10 @@ function mondayOf(dateStr) {
 }
 function todayDayLabel() {
   const idx = new Date().getDay();
+  return idx === 0 ? null : DAYS[idx - 1];
+}
+function dayLabelForDateStr(dateStr) {
+  const idx = new Date(dateStr + "T00:00:00").getDay();
   return idx === 0 ? null : DAYS[idx - 1];
 }
 
@@ -999,6 +1004,14 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
   // 그날 그 학생 앞으로 등록된 숙제가 실제로 제출됐는지 자동으로 판단 (강사가 따로 체크할 필요 없음)
   const todaysHomeworks = studentId ? data.homeworks.filter(h => h.studentId === studentId && h.date === date) : [];
   const homeworkStatus = todaysHomeworks.length === 0 ? null : todaysHomeworks.every(h => h.submitted);
+  const currentStudent = data.students.find(s => s.id === studentId);
+  const dayLabel = dayLabelForDateStr(date);
+  const scheduleBlocks = (data.classSchedules && currentStudent?.classGroup && data.classSchedules[currentStudent.classGroup]) || [];
+  const todaysClassBlocks = dayLabel ? scheduleBlocks.filter(b => (b.days || []).includes(dayLabel)) : [];
+  const classStartTime = todaysClassBlocks.length ? [...todaysClassBlocks].map(b => b.start).sort()[0] : null;
+  const homeworkLate = (homeworkStatus && classStartTime)
+    ? todaysHomeworks.some(h => h.submittedAt && new Date(h.submittedAt).toTimeString().slice(0, 5) > classStartTime)
+    : null;
 
   const practiceItem = items.find(it => it.key === "practice");
   const wrongItem = items.find(it => it.key === "wrong");
@@ -1017,7 +1030,7 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
   const save = () => {
     if (!studentId) return;
     const student = data.students.find(s => s.id === studentId);
-    const itemsToSave = items.map(it => it.key === "homework" ? { ...it, result: homeworkStatus } : it);
+    const itemsToSave = items.map(it => it.key === "homework" ? { ...it, result: homeworkStatus, late: homeworkLate, classStartTime } : it);
     const rates = itemsToSave.map(rateOf).filter(r => r !== null);
     const score = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : 0;
     const routine = { id: uid(), studentId, date, items: itemsToSave, testName, testScore: testScore ? Number(testScore) : null, comment, score, createdAt: new Date().toISOString() };
@@ -1049,8 +1062,8 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
                 <div key={it.key} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: "#efe6d0" }}>
                   <span className="text-sm w-16 flex-shrink-0" style={{ color: "#2b2417" }}>{it.label}</span>
                   <span className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold"
-                    style={{ background: homeworkStatus === null ? "#e4d8ba" : homeworkStatus ? "#4c8c5f" : "var(--coral)", color: homeworkStatus === null ? "#5c543e" : "#fff" }}>
-                    {homeworkStatus === null ? "해당없음" : homeworkStatus ? "제출완료" : "미제출"}
+                    style={{ background: homeworkStatus === null ? "#e4d8ba" : homeworkStatus ? (homeworkLate ? "var(--gold)" : "#4c8c5f") : "var(--coral)", color: homeworkStatus === null ? "#5c543e" : "#fff" }}>
+                    {homeworkStatus === null ? "해당없음" : homeworkStatus ? (classStartTime ? (homeworkLate ? "제출완료 (수업 후)" : "제출완료 (수업 전)") : "제출완료") : "미제출"}
                   </span>
                 </div>
               );
@@ -1158,7 +1171,12 @@ function buildDailyReportText(student, date, items, testName, testScore, comment
         lines.push(`문제풀이 · 기록 없음`);
       }
     } else if (it.kind === "boolean") {
-      lines.push(`${it.label} · ${it.result === null ? "해당없음" : it.result ? "✅ 완료" : "❌ 미완료"}`);
+      let statusText = "해당없음";
+      if (it.result !== null) {
+        if (it.result) statusText = it.classStartTime ? (it.late ? "✅ 제출완료 (수업 후)" : "✅ 제출완료 (수업 전)") : "✅ 완료";
+        else statusText = "❌ 미완료";
+      }
+      lines.push(`${it.label} · ${statusText}`);
     } else if (it.kind === "choice") {
       const opt = (it.options || []).find(o => o.value === it.result);
       lines.push(`${it.label} · ${opt ? `${opt.value} (${opt.label})` : "-"}`);
