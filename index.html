@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-20";
+const APP_VERSION = "2026-09-14-23";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,9 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
+
 
 
 
@@ -763,7 +766,6 @@ function HomeworkTab({ data, setData, scopeClassGroups }) {
   const [dueDate, setDueDate] = useState(todayStr());
   const [studentId, setStudentId] = useState("");
   const [title, setTitle] = useState("");
-  const [openPhoto, setOpenPhoto] = useState(null);
   const scopedStudents = studentsInScope(data.students, scopeClassGroups);
   const scopedIds = new Set(scopedStudents.map(s => s.id));
   const dayEntries = data.homeworks.filter(h => h.date === date && scopedIds.has(h.studentId));
@@ -805,7 +807,6 @@ function HomeworkTab({ data, setData, scopeClassGroups }) {
                   <div className="text-sm" style={{ color: "#4a4332" }}>
                     <b style={{ color: "#2b2417" }}>{studentName(h.studentId)}</b> · {h.title}
                     {h.dueDate && <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded-full" style={{ background: isOverdue(h) ? "var(--coral)" : "#e4d8ba", color: isOverdue(h) ? "#fff" : "#5c543e" }}>{isOverdue(h) ? "기한 초과" : `기한 ${h.dueDate}`}</span>}
-                    {h.submitted && h.submittedAt && <div className="text-xs mt-0.5" style={{ color: "#7a6f52" }}>{formatTime(h.submittedAt)} 제출</div>}
                   </div>
                   <div className="flex items-center gap-2">
                     <button onClick={() => toggle(h)} className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1" style={{ background: h.submitted ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>
@@ -814,17 +815,13 @@ function HomeworkTab({ data, setData, scopeClassGroups }) {
                     <button onClick={() => remove(h.id)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
                   </div>
                 </div>
-                {h.photo && (
-                  <div>
-                    <button onClick={() => setOpenPhoto(openPhoto === h.id ? null : h.id)} className="text-xs underline" style={{ color: "var(--gold)" }}>
-                      {openPhoto === h.id ? "질문 사진 접기" : "질문 사진 보기"}
-                    </button>
-                    {openPhoto === h.id && (
-                      <div className="mt-2">
-                        <img src={h.photo} alt="모르는 문제" className="rounded-lg max-w-full" style={{ maxHeight: 260 }} />
-                        {h.note && <p className="text-xs mt-1" style={{ color: "#7a6f52" }}>{h.note}</p>}
-                      </div>
-                    )}
+                {(h.submittedAt || (h.photos && h.photos.length > 0) || h.photo) && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {h.submittedAt && <span className="text-xs flex-shrink-0" style={{ color: "#7a6f52" }}>{formatTime(h.submittedAt)} 제출</span>}
+                    {(h.photos || (h.photo ? [h.photo] : [])).map((src, i) => (
+                      <img key={i} src={src} onClick={() => window.open(src, "_blank")} alt="질문 사진" className="rounded-md cursor-pointer flex-shrink-0" style={{ height: 52, width: 52, objectFit: "cover", border: "1px solid #e4d8ba" }} />
+                    ))}
+                    {h.note && <p className="text-xs" style={{ color: "#7a6f52" }}>{h.note}</p>}
                   </div>
                 )}
               </li>
@@ -1046,7 +1043,14 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
     const alerts = syncAlerts(data.alerts, `routine:${routineId}`, true, () => ({ studentId, kind: "오늘의 루틴", message }));
     const routines = editingId ? data.routines.map(r => r.id === editingId ? routine : r) : [...data.routines, routine];
 
-    setData({ ...data, routines, alerts });
+    // "오늘의 평가" 점수를 "테스트 기록"·"성적 추이"에도 반영되도록 data.tests에 함께 기록 (수정 시 같은 항목을 갱신)
+    const linkedTestId = `routine-${routineId}`;
+    let tests = data.tests.filter(t => t.id !== linkedTestId);
+    if (testName.trim() && testScore !== "") {
+      tests = [...tests, { id: linkedTestId, studentId, name: testName.trim(), testType: "일일테스트", date, score: Number(testScore), passLine: PASS_RATE }];
+    }
+
+    setData({ ...data, routines, alerts, tests });
     setTestName(""); setTestScore(""); setComment("");
     setItems(ROUTINE_ITEM_DEFS.map(d => ({ ...d, result: d.kind === "count" ? "" : (d.kind === "choice" ? "" : false) })));
     setEditingId(null);
@@ -1071,7 +1075,7 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
     setItems(ROUTINE_ITEM_DEFS.map(d => ({ ...d, result: d.kind === "count" ? "" : (d.kind === "choice" ? "" : false) })));
   };
 
-  const removeRoutine = (id) => setData({ ...data, routines: data.routines.filter(r => r.id !== id), alerts: data.alerts.filter(a => a.sourceKey !== `routine:${id}` || a.status !== "대기") });
+  const removeRoutine = (id) => setData({ ...data, routines: data.routines.filter(r => r.id !== id), alerts: data.alerts.filter(a => a.sourceKey !== `routine:${id}` || a.status !== "대기"), tests: data.tests.filter(t => t.id !== `routine-${id}`) });
 
   const mine = data.routines.filter(r => studentsInScope(data.students, scopeClassGroups).some(s => s.id === r.studentId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10);
 
@@ -1996,6 +2000,8 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
   const homeworks = data.homeworks.filter(h => h.studentId === studentId).sort((a, b) => b.date.localeCompare(a.date));
   const blockDates = [...new Set(data.plannerBlocks.filter(b => b.studentId === studentId).map(b => b.date))].sort((a, b) => b.localeCompare(a)).slice(0, 7);
   const tests = data.tests.filter(t => t.studentId === studentId).sort((a, b) => a.date.localeCompare(b.date));
+  const plannerEntries = data.planners.filter(p => p.studentId === studentId).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8);
+  const attendanceEntries = data.attendance.filter(a => a.studentId === studentId).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8);
   const comments = data.teacherComments.filter(c => c.studentId === studentId);
   const notes = data.counselingNotes.filter(c => c.studentId === studentId);
   const [plannerViewDate, setPlannerViewDate] = useState(blockDates[0] || todayStr());
@@ -2100,6 +2106,37 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
       </div>
 
       <WeeklyRoutineBlock data={data} setData={setData} studentId={studentId} weekStart={mondayOf(todayStr())} showAlertButton={canEdit} />
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>플래너 성취율 (선생님 대조)</h3>
+        {plannerEntries.length === 0 ? <EmptyState text="기록이 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {plannerEntries.map(p => {
+              const rate = p.planned > 0 ? Math.round((p.done / p.planned) * 100) : 0;
+              return (
+                <li key={p.id} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
+                  <span className="text-xs" style={{ color: "#7a6f52" }}>{p.date} · 계획 {p.planned} / 완료 {p.done}{p.memo && ` · ${p.memo}`}</span>
+                  <span className="text-sm font-bold" style={{ color: rate < PASS_RATE ? "var(--coral)" : "var(--gold)" }}>{rate}%</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>출결 기록</h3>
+        {attendanceEntries.length === 0 ? <EmptyState text="기록이 없습니다." /> : (
+          <ul className="flex flex-col gap-2">
+            {attendanceEntries.map(a => (
+              <li key={a.id} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
+                <span className="text-xs" style={{ color: "#7a6f52" }}>{a.date}{a.time ? ` · ${a.time}` : ""}{a.source === "student" ? " · 학생 직접 체크인" : ""}</span>
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: a.status === "결석" ? "var(--coral)" : a.status === "지각" ? "var(--gold)" : "#4c8c5f", color: "#fff" }}>{a.status}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <div className="rounded-2xl p-4" style={panel}>
         <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>③ 테스트 기록 (누적)</h3>
@@ -2886,6 +2923,20 @@ function StudyTimer({ data, setData, studentId }) {
     try { localStorage.removeItem(storageKey); } catch (e) { /* 무시 */ }
   };
 
+  // 공부 중(진행중)일 때 다른 앱으로 나가면(화면을 벗어나면) 자동으로 멈춤 처리
+  // → 타이머 켜둔 채로 유튜브/카톡 보는 걸 막아주면서도, 화장실 등 짧은 이탈에는 시간 손해가 없음
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden" && running && segmentStart) {
+        setElapsedMs(prev => prev + (Date.now() - segmentStart));
+        setSegmentStart(null);
+        setRunning(false);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [running, segmentStart]);
+
   const saveToPlanner = () => {
     const totalMinutes = Math.round(currentElapsedMs / 60000);
     if (totalMinutes < 1) return;
@@ -2917,7 +2968,7 @@ function StudyTimer({ data, setData, studentId }) {
           <button onClick={reset} className="px-4 py-2.5 rounded-lg text-sm" style={{ border: "1px solid #ddcda0", color: "#5c543e" }}>초기화</button>
         </div>
       )}
-      <p className="text-[11px]" style={{ color: "#8a7f5e" }}>공부할 때 "공부 시작", 쉴 때 눌러서 멈추고, 다시 누르면 이어서 계산돼요. 다 끝나면 "순공시간으로 저장"을 누르면 오늘 플래너에 자동으로 기록돼요.</p>
+      <p className="text-[11px]" style={{ color: "#8a7f5e" }}>공부할 때 "공부 시작", 쉴 때 눌러서 멈추고, 다시 누르면 이어서 계산돼요. 다 끝나면 "순공시간으로 저장"을 누르면 오늘 플래너에 자동으로 기록돼요. (진행 중에 다른 앱으로 나가면 자동으로 멈춰요 — 딴짓 방지용이에요)</p>
     </div>
   );
 }
@@ -2958,6 +3009,11 @@ function DayTimeline({ blocks }) {
         <div className="relative flex-1 rounded-lg" style={{ height: totalHeight, background: "#fffcf6", border: "1px solid #e4d8ba" }}>
           {hourMarks.map((m, i) => (
             <div key={m} style={{ position: "absolute", top: i * rowHeight, left: 0, right: 0, borderTop: "1px solid #f2ead6" }} />
+          ))}
+          {hourMarks.slice(0, -1).flatMap((m, i) => (
+            [1, 2, 3, 4, 5].map(sub => (
+              <div key={`${m}-${sub}`} style={{ position: "absolute", top: i * rowHeight + (sub * rowHeight) / 6, left: 0, right: 0, borderTop: "1px dotted #f6efdd" }} />
+            ))
           ))}
           {blocks.map(b => {
             const roundTo10 = (mins) => Math.round(mins / 10) * 10;
@@ -3060,61 +3116,80 @@ function StudentHomeworkTab({ data, setData, studentId }) {
   const [openPhotoFor, setOpenPhotoFor] = useState(null);
   const [uploadingId, setUploadingId] = useState(null);
 
+  const photosOf = (h) => h.photos || (h.photo ? [h.photo] : []);
+
   const toggle = (h) => {
     const nextSubmitted = !h.submitted;
     const updated = { ...h, submitted: nextSubmitted, submittedAt: nextSubmitted ? new Date().toISOString() : null };
     setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? updated : x), alerts: syncHomeworkAlert(updated, data) });
   };
 
-  const onPickPhoto = async (h, file) => {
-    if (!file) return;
+  const onPickPhoto = async (h, files) => {
+    if (!files || files.length === 0) return;
     setUploadingId(h.id);
     try {
-      const dataUrl = await fileToCompressedDataURL(file);
-      setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? { ...x, photo: dataUrl } : x) });
+      const newUrls = [];
+      for (const file of Array.from(files)) {
+        const dataUrl = await fileToCompressedDataURL(file);
+        newUrls.push(dataUrl);
+      }
+      setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? { ...x, photos: [...photosOf(x), ...newUrls], photo: null } : x) });
     } catch (e) {
       console.error("사진 처리 실패", e);
     }
     setUploadingId(null);
   };
 
-  const removePhoto = (h) => setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? { ...x, photo: null, note: "" } : x) });
+  const removeOnePhoto = (h, index) => setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? { ...x, photos: photosOf(x).filter((_, i) => i !== index), photo: null } : x) });
+  const removeAllPhotos = (h) => setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? { ...x, photos: [], photo: null, note: "" } : x) });
 
   return (
     <div className="rounded-2xl p-4" style={panel}>
       <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>숙제 제출</h3>
       {mine.length === 0 ? <EmptyState text="등록된 숙제가 없습니다." /> : (
         <ul className="flex flex-col gap-3">
-          {mine.map(h => (
-            <li key={h.id} className="p-3 rounded-lg flex flex-col gap-2" style={{ background: h.submitted ? "#efe6d0" : "#f8e3c9" }}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm" style={{ color: "#2b2417" }}>
-                  {h.date} · {h.title}
-                  {h.dueDate && <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded-full" style={{ background: (!h.submitted && h.dueDate < todayStr()) ? "var(--coral)" : "#e4d8ba", color: (!h.submitted && h.dueDate < todayStr()) ? "#fff" : "#5c543e" }}>{(!h.submitted && h.dueDate < todayStr()) ? "기한 초과" : `기한 ${h.dueDate}`}</span>}
-                </span>
-                <button onClick={() => toggle(h)} className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1" style={{ background: h.submitted ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>
-                  {h.submitted ? <Check size={12} /> : <ClipboardCheck size={12} />}{h.submitted ? "제출완료 (취소)" : "제출하기"}
-                </button>
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-xs underline cursor-pointer" style={{ color: "var(--gold)" }}>
-                  {uploadingId === h.id ? "처리 중…" : h.photo ? "질문 사진 다시 올리기" : "모르는 문제 사진 올리기"}
-                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => onPickPhoto(h, e.target.files[0])} />
-                </label>
-                {h.photo && (
-                  <>
-                    <button onClick={() => setOpenPhotoFor(openPhotoFor === h.id ? null : h.id)} className="text-xs underline" style={{ color: "#7a6f52" }}>
-                      {openPhotoFor === h.id ? "접기" : "보기"}
-                    </button>
-                    <button onClick={() => removePhoto(h)} className="text-xs" style={{ color: "var(--coral)" }}>삭제</button>
-                  </>
+          {mine.map(h => {
+            const photos = photosOf(h);
+            return (
+              <li key={h.id} className="p-3 rounded-lg flex flex-col gap-2" style={{ background: h.submitted ? "#efe6d0" : "#f8e3c9" }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm" style={{ color: "#2b2417" }}>
+                    {h.date} · {h.title}
+                    {h.dueDate && <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded-full" style={{ background: (!h.submitted && h.dueDate < todayStr()) ? "var(--coral)" : "#e4d8ba", color: (!h.submitted && h.dueDate < todayStr()) ? "#fff" : "#5c543e" }}>{(!h.submitted && h.dueDate < todayStr()) ? "기한 초과" : `기한 ${h.dueDate}`}</span>}
+                  </span>
+                  <button onClick={() => toggle(h)} className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1" style={{ background: h.submitted ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>
+                    {h.submitted ? <Check size={12} /> : <ClipboardCheck size={12} />}{h.submitted ? "제출완료 (취소)" : "제출하기"}
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <label className="text-xs underline cursor-pointer" style={{ color: "var(--gold)" }}>
+                    {uploadingId === h.id ? "처리 중…" : photos.length > 0 ? "사진 더 올리기" : "모르는 문제 사진 올리기"}
+                    <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={e => onPickPhoto(h, e.target.files)} />
+                  </label>
+                  {photos.length > 0 && (
+                    <>
+                      <button onClick={() => setOpenPhotoFor(openPhotoFor === h.id ? null : h.id)} className="text-xs underline" style={{ color: "#7a6f52" }}>
+                        {openPhotoFor === h.id ? "접기" : `보기 (${photos.length}장)`}
+                      </button>
+                      <button onClick={() => removeAllPhotos(h)} className="text-xs" style={{ color: "var(--coral)" }}>전체삭제</button>
+                    </>
+                  )}
+                </div>
+                {photos.length > 0 && openPhotoFor === h.id && (
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {photos.map((src, i) => (
+                      <div key={i} className="relative flex-shrink-0">
+                        <img src={src} alt="모르는 문제" className="rounded-lg" style={{ height: 160 }} />
+                        <button onClick={() => removeOnePhoto(h, i)} className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
+                          <X size={12} color="#fff" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </div>
-              {h.photo && openPhotoFor === h.id && (
-                <img src={h.photo} alt="모르는 문제" className="rounded-lg max-w-full" style={{ maxHeight: 260 }} />
-              )}
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
       <p className="text-[11px] mt-3" style={{ color: "#8a7f5e" }}>사진은 앱 저장 공간을 함께 쓰기 때문에 너무 많이 쌓이면 저장이 안 될 수 있어요. 확인이 끝난 사진은 삭제해 주세요.</p>
