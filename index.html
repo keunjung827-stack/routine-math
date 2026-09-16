@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-17";
+const APP_VERSION = "2026-09-14-20";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,9 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
+
 
 
 
@@ -1003,6 +1006,7 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
   const [testName, setTestName] = useState("");
   const [testScore, setTestScore] = useState("");
   const [comment, setComment] = useState("");
+  const [editingId, setEditingId] = useState(null);
   const students = studentsInScope(data.students, scopeClassGroups);
   const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
 
@@ -1033,16 +1037,41 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
     const itemsToSave = items.map(it => it.key === "homework" ? { ...it, result: homeworkStatus, overdue: homeworkOverdue } : it);
     const rates = itemsToSave.map(rateOf).filter(r => r !== null);
     const score = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : 0;
-    const routine = { id: uid(), studentId, date, items: itemsToSave, testName, testScore: testScore ? Number(testScore) : null, comment, score, createdAt: new Date().toISOString() };
+    const routineId = editingId || uid();
+    const existing = editingId ? data.routines.find(r => r.id === editingId) : null;
+    const routine = { id: routineId, studentId, date, items: itemsToSave, testName, testScore: testScore ? Number(testScore) : null, comment, score, createdAt: existing?.createdAt || new Date().toISOString() };
 
     const attendance = data.attendance.find(a => a.studentId === studentId && a.date === date);
     const message = buildDailyReportText(student, date, itemsToSave, testName, testScore, comment, score, attendance);
-    const alert = { id: uid(), studentId, sourceKey: `routine:${routine.id}`, kind: "오늘의 루틴", message, status: "대기", createdAt: new Date().toISOString() };
+    const alerts = syncAlerts(data.alerts, `routine:${routineId}`, true, () => ({ studentId, kind: "오늘의 루틴", message }));
+    const routines = editingId ? data.routines.map(r => r.id === editingId ? routine : r) : [...data.routines, routine];
 
-    setData({ ...data, routines: [...data.routines, routine], alerts: [...data.alerts, alert] });
+    setData({ ...data, routines, alerts });
+    setTestName(""); setTestScore(""); setComment("");
+    setItems(ROUTINE_ITEM_DEFS.map(d => ({ ...d, result: d.kind === "count" ? "" : (d.kind === "choice" ? "" : false) })));
+    setEditingId(null);
+  };
+
+  const editRoutine = (r) => {
+    setEditingId(r.id);
+    setStudentId(r.studentId);
+    setDate(r.date);
+    setItems(ROUTINE_ITEM_DEFS.map(def => {
+      const found = (r.items || []).find(it => it.key === def.key);
+      return { ...def, result: found ? found.result : (def.kind === "count" ? "" : (def.kind === "choice" ? "" : false)) };
+    }));
+    setTestName(r.testName || "");
+    setTestScore(r.testScore != null ? String(r.testScore) : "");
+    setComment(r.comment || "");
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
     setTestName(""); setTestScore(""); setComment("");
     setItems(ROUTINE_ITEM_DEFS.map(d => ({ ...d, result: d.kind === "count" ? "" : (d.kind === "choice" ? "" : false) })));
   };
+
+  const removeRoutine = (id) => setData({ ...data, routines: data.routines.filter(r => r.id !== id), alerts: data.alerts.filter(a => a.sourceKey !== `routine:${id}` || a.status !== "대기") });
 
   const mine = data.routines.filter(r => studentsInScope(data.students, scopeClassGroups).some(s => s.id === r.studentId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10);
 
@@ -1111,7 +1140,10 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
           <Field label="점수"><input type="number" className={inputCls} style={inputStyle} value={testScore} onChange={e => setTestScore(e.target.value)} /></Field>
         </div>
         <Field label="선생님 코멘트"><textarea rows={2} className={inputCls} style={inputStyle} value={comment} onChange={e => setComment(e.target.value)} placeholder="오늘 개념 이해는 좋았습니다..." /></Field>
-        <button onClick={save} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />저장하고 알림 생성</button>
+        <div className="flex gap-2">
+          <button onClick={save} className="px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}>{editingId ? <Pencil size={16} /> : <Plus size={16} />}{editingId ? "수정 저장" : "저장하고 알림 생성"}</button>
+          {editingId && <button onClick={cancelEdit} className="px-4 py-2 rounded-lg text-sm" style={{ border: "1px solid #ddcda0", color: "#5c543e" }}>취소</button>}
+        </div>
         <p className="text-[11px]" style={{ color: "#8a7f5e" }}>저장하면 학부모 알림함(소통)에 항상 대기 알림이 새로 생성돼요. 관리자가 내용을 확인한 뒤 복사해서 직접 발송하는 구조라, 검토 없이 바로 나가지 않아요. 숙제 항목은 학생이 실제로 제출했는지를 자동으로 가져와요.</p>
       </div>
       <div className="rounded-2xl p-4" style={panel}>
@@ -1124,13 +1156,15 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
               const pc = Number(p?.result) || 0, wc = Number(w?.result) || 0;
               const acc = pc > 0 ? Math.round(((pc - wc) / pc) * 100) : null;
               return (
-                <li key={r.id} className="p-3 rounded-lg" style={{ background: "#efe6d0" }}>
+                <li key={r.id} className="p-3 rounded-lg" style={{ background: editingId === r.id ? "#f8e3c9" : "#efe6d0" }}>
                   <div className="flex items-center justify-between">
                     <span className="text-sm" style={{ color: "#2b2417" }}><b>{studentName(r.studentId)}</b> · {r.date}</span>
-                    <div className="flex gap-1">
+                    <div className="flex items-center gap-1.5">
                       {(r.items || []).filter(it => it.kind === "choice" && it.result).map(it => (
                         <span key={it.key} className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#e4d8ba", color: "#5c543e" }}>{it.result}</span>
                       ))}
+                      <button onClick={() => editRoutine(r)} className="p-1 rounded-md" style={{ background: "#efe3c8" }}><Pencil size={12} color="#5c543e" /></button>
+                      <button onClick={() => removeRoutine(r.id)} className="p-1 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={12} color="var(--coral)" /></button>
                     </div>
                   </div>
                   {pc > 0 && <div className="text-xs mt-1" style={{ color: "#7a6f52" }}>{pc}문제 풀이 · 오답 {wc} · 정답률 {acc}%</div>}
@@ -2926,7 +2960,8 @@ function DayTimeline({ blocks }) {
             <div key={m} style={{ position: "absolute", top: i * rowHeight, left: 0, right: 0, borderTop: "1px solid #f2ead6" }} />
           ))}
           {blocks.map(b => {
-            const s = toMinutes(b.start), e = toMinutes(b.end);
+            const roundTo10 = (mins) => Math.round(mins / 10) * 10;
+            const s = roundTo10(toMinutes(b.start)), e = Math.max(s + 10, roundTo10(toMinutes(b.end)));
             const top = ((s - rangeStart) / 60) * rowHeight;
             const height = Math.max(8, ((e - s) / 60) * rowHeight - 2);
             return (
