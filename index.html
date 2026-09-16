@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-23";
+const APP_VERSION = "2026-09-14-24";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -1300,9 +1301,8 @@ function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButt
   return (
     <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
       <div>
-        <div className="text-xs" style={{ color: "#7a6f52" }}>이번 주 목표 100%</div>
         <h3 className="text-2xl font-bold" style={{ color: overall !== null && overall < PASS_RATE ? "var(--coral)" : "var(--gold)", fontFamily: "'Noto Serif KR', serif" }}>
-          실제 달성률 {overall === null ? "-" : `${overall}%`}
+          이번 주 실제 달성률 {overall === null ? "-" : `${overall}%`}
         </h3>
       </div>
       {weekRoutines.length === 0 ? <EmptyState text="이번 주 등록된 오늘의 루틴 기록이 없습니다." /> : (
@@ -2108,23 +2108,6 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
       <WeeklyRoutineBlock data={data} setData={setData} studentId={studentId} weekStart={mondayOf(todayStr())} showAlertButton={canEdit} />
 
       <div className="rounded-2xl p-4" style={panel}>
-        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>플래너 성취율 (선생님 대조)</h3>
-        {plannerEntries.length === 0 ? <EmptyState text="기록이 없습니다." /> : (
-          <ul className="flex flex-col gap-2">
-            {plannerEntries.map(p => {
-              const rate = p.planned > 0 ? Math.round((p.done / p.planned) * 100) : 0;
-              return (
-                <li key={p.id} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
-                  <span className="text-xs" style={{ color: "#7a6f52" }}>{p.date} · 계획 {p.planned} / 완료 {p.done}{p.memo && ` · ${p.memo}`}</span>
-                  <span className="text-sm font-bold" style={{ color: rate < PASS_RATE ? "var(--coral)" : "var(--gold)" }}>{rate}%</span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-
-      <div className="rounded-2xl p-4" style={panel}>
         <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>출결 기록</h3>
         {attendanceEntries.length === 0 ? <EmptyState text="기록이 없습니다." /> : (
           <ul className="flex flex-col gap-2">
@@ -2206,7 +2189,7 @@ const COMPONENT_MAP = {
 const GROUPS = [
   { id: "dashboard", label: "대시보드", icon: Home, accent: "#4c8c5f", tabs: [{ id: "dashboard", label: "요약" }, { id: "today", label: "오늘 할 일" }] },
   { id: "students", label: "학생 관리", icon: Users, accent: "#4c8c5f", tabs: [{ id: "students", label: "학생 명부" }, { id: "routine", label: "루틴체크" }] },
-  { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "planner", label: "플래너·성취율" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }] },
+  { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }] },
   { id: "schedule", label: "일정·자습실", icon: CalendarClock, accent: "#e2822f", tabs: [{ id: "sessions", label: "보강·클리닉" }, { id: "seats", label: "자습실 관리" }] },
   { id: "classroom", label: "강의실", icon: BookOpen, accent: "#c65a1f", tabs: [{ id: "videos", label: "강의 업로드" }, { id: "curriculum", label: "커리큘럼" }, { id: "eduPhilosophy", label: "교육관" }, { id: "classSchedule", label: "반 시간표" }] },
   { id: "comm", label: "소통", icon: Bell, accent: "#c65a1f", tabs: [{ id: "alerts", label: "학부모 알림" }, { id: "requests", label: "요청함" }, { id: "messages", label: "1:1 문의" }] },
