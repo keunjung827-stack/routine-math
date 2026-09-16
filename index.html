@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-15";
+const APP_VERSION = "2026-09-14-16";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -1962,6 +1963,7 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
   const tests = data.tests.filter(t => t.studentId === studentId).sort((a, b) => a.date.localeCompare(b.date));
   const comments = data.teacherComments.filter(c => c.studentId === studentId);
   const notes = data.counselingNotes.filter(c => c.studentId === studentId);
+  const [plannerViewDate, setPlannerViewDate] = useState(blockDates[0] || todayStr());
 
   const recentHomeworks = homeworks.slice(0, 8);
   const submittedRate = homeworks.length ? Math.round((homeworks.filter(h => h.submitted).length / homeworks.length) * 100) : null;
@@ -2033,6 +2035,15 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
             ))}
           </ul>
         )}
+      </div>
+
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>플래너 자세히 보기</h3>
+          <input type="date" className="rounded-lg px-2 py-1.5 text-xs" style={inputStyle} value={plannerViewDate} onChange={e => setPlannerViewDate(e.target.value)} />
+        </div>
+        <PlannerTaskList data={data} setData={setData} studentId={studentId} date={plannerViewDate} readOnly />
+        <DayTimeline blocks={data.plannerBlocks.filter(b => b.studentId === studentId && b.date === plannerViewDate)} />
       </div>
 
       <div className="rounded-2xl p-4" style={panel}>
@@ -2731,7 +2742,7 @@ function TeachersTab({ data, setData }) {
 
 // ================= 학생 모드 =================
 // 오늘 할 일 계획 (과목별로 묶어서 체크리스트로 표시, 타임테이블과 같은 과목 색상 사용)
-function PlannerTaskList({ data, setData, studentId, date }) {
+function PlannerTaskList({ data, setData, studentId, date, readOnly }) {
   const [subject, setSubject] = useState("");
   const [content, setContent] = useState("");
   const tasks = (data.plannerTasks || []).filter(t => t.studentId === studentId && t.date === date);
@@ -2748,13 +2759,17 @@ function PlannerTaskList({ data, setData, studentId, date }) {
 
   return (
     <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
-      <h3 className="font-bold flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}>📋 오늘 할 일 계획</h3>
-      <div className="grid grid-cols-2 gap-2">
-        <input className={inputCls} style={inputStyle} value={subject} onChange={e => setSubject(e.target.value)} placeholder="과목 (예: 수학)" />
-        <input className={inputCls} style={inputStyle} value={content} onChange={e => setContent(e.target.value)} placeholder="할 일 (예: 쎈B 30문제)" onKeyDown={e => e.key === "Enter" && add()} />
-      </div>
-      <button onClick={add} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />추가</button>
-      {tasks.length === 0 ? <EmptyState text="오늘 계획한 할 일이 없습니다." /> : (
+      <h3 className="font-bold flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}>📋 {readOnly ? "그날 계획" : "오늘 할 일 계획"}</h3>
+      {!readOnly && (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <input className={inputCls} style={inputStyle} value={subject} onChange={e => setSubject(e.target.value)} placeholder="과목 (예: 수학)" />
+            <input className={inputCls} style={inputStyle} value={content} onChange={e => setContent(e.target.value)} placeholder="할 일 (예: 쎈B 30문제)" onKeyDown={e => e.key === "Enter" && add()} />
+          </div>
+          <button onClick={add} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />추가</button>
+        </>
+      )}
+      {tasks.length === 0 ? <EmptyState text="계획한 할 일이 없습니다." /> : (
         <div className="flex flex-col gap-3">
           {Object.keys(bySubject).map(subj => (
             <div key={subj}>
@@ -2765,13 +2780,24 @@ function PlannerTaskList({ data, setData, studentId, date }) {
               <ul className="flex flex-col gap-1.5">
                 {bySubject[subj].map(t => (
                   <li key={t.id} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: "#efe6d0" }}>
-                    <button onClick={() => toggle(t)} className="flex items-center gap-2 text-sm flex-1 text-left" style={{ color: t.done ? "#8a7f5e" : "#2b2417", textDecoration: t.done ? "line-through" : "none" }}>
-                      <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{ border: `2px solid ${t.done ? "#4c8c5f" : "#ddcda0"}`, background: t.done ? "#4c8c5f" : "transparent" }}>
-                        {t.done && <Check size={12} color="#fff" />}
-                      </span>
-                      {t.content}
-                    </button>
-                    <button onClick={() => remove(t.id)}><X size={14} color="#a89d84" /></button>
+                    {readOnly ? (
+                      <div className="flex items-center gap-2 text-sm flex-1" style={{ color: t.done ? "#8a7f5e" : "#2b2417", textDecoration: t.done ? "line-through" : "none" }}>
+                        <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{ border: `2px solid ${t.done ? "#4c8c5f" : "#ddcda0"}`, background: t.done ? "#4c8c5f" : "transparent" }}>
+                          {t.done && <Check size={12} color="#fff" />}
+                        </span>
+                        {t.content}
+                      </div>
+                    ) : (
+                      <>
+                        <button onClick={() => toggle(t)} className="flex items-center gap-2 text-sm flex-1 text-left" style={{ color: t.done ? "#8a7f5e" : "#2b2417", textDecoration: t.done ? "line-through" : "none" }}>
+                          <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{ border: `2px solid ${t.done ? "#4c8c5f" : "#ddcda0"}`, background: t.done ? "#4c8c5f" : "transparent" }}>
+                            {t.done && <Check size={12} color="#fff" />}
+                          </span>
+                          {t.content}
+                        </button>
+                        <button onClick={() => remove(t.id)}><X size={14} color="#a89d84" /></button>
+                      </>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -2779,7 +2805,7 @@ function PlannerTaskList({ data, setData, studentId, date }) {
           ))}
         </div>
       )}
-      <p className="text-[11px]" style={{ color: "#8a7f5e" }}>과목명을 아래 순공 타이머에서 쓸 것과 똑같이 입력하면, 타임테이블 색깔이랑 계획 색깔이 서로 맞춰져요.</p>
+      {!readOnly && <p className="text-[11px]" style={{ color: "#8a7f5e" }}>과목명을 아래 순공 타이머에서 쓸 것과 똑같이 입력하면, 타임테이블 색깔이랑 계획 색깔이 서로 맞춰져요.</p>}
     </div>
   );
 }
