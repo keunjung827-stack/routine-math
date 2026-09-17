@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-40";
+const APP_VERSION = "2026-09-14-41";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -3262,7 +3263,16 @@ function StudentHomeworkTab({ data, setData, studentId }) {
   const toggle = (h) => {
     const nextSubmitted = !h.submitted;
     const updated = { ...h, submitted: nextSubmitted, submittedAt: nextSubmitted ? new Date().toISOString() : null };
-    setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? updated : x), alerts: syncHomeworkAlert(updated, data) });
+    let alerts = syncHomeworkAlert(updated, data);
+    if (nextSubmitted) {
+      const student = data.students.find(s => s.id === studentId);
+      const timeStr = new Date(updated.submittedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      const hasPhoto = photosOf(updated).length > 0;
+      const message = `[루틴수학] ${student?.name || ""} 학생이 "${updated.title}" 숙제를 제출했습니다 (${timeStr}). ${hasPhoto ? "질문 사진 있음" : "질문 사진 없음"}`;
+      const alert = { id: uid(), studentId, sourceKey: `homework-submit:${updated.id}:${updated.submittedAt}`, kind: "숙제 제출", message, status: "대기", createdAt: new Date().toISOString() };
+      alerts = [...alerts, alert];
+    }
+    setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? updated : x), alerts });
   };
 
   const onPickPhoto = async (h, files) => {
