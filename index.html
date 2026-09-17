@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-39";
+const APP_VERSION = "2026-09-14-40";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -1073,7 +1074,7 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
     const linkedTestId = `routine-${routineId}`;
     let tests = data.tests.filter(t => t.id !== linkedTestId);
     if (testName.trim() && testScore !== "") {
-      tests = [...tests, { id: linkedTestId, studentId, name: testName.trim(), testType: "일일테스트", date, score: Number(testScore), passLine: PASS_RATE }];
+      tests = [...tests, { id: linkedTestId, studentId, name: testName.trim(), testType: "일일테스트", date, score: Number(testScore), passLine: PASS_RATE, passed: Number(testScore) >= PASS_RATE, retest: false, note: "" }];
     }
 
     setData({ ...data, routines, alerts, tests });
@@ -2227,7 +2228,20 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
                 )}
                 {dpc > 0 && <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>문제풀이</b> · {dpc}문제 · 오답 {dwc} · 정답률 {dacc}%</div>}
                 {hwItem && <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>숙제</b> · {hwItem.result || "선택 안 함"}</div>}
-                {dayRoutine.testName && <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>{dayRoutine.testName}</b> · {dayRoutine.testScore}점</div>}
+                {dayRoutine.testName && (() => {
+                  const linkedTest = data.tests.find(t => t.id === `routine-${dayRoutine.id}`);
+                  return (
+                    <div className="text-sm flex items-center gap-2 flex-wrap" style={{ color: "#4a4332" }}>
+                      <span><b style={{ color: "#2b2417" }}>{dayRoutine.testName}</b> · {dayRoutine.testScore}점</span>
+                      {linkedTest && (
+                        <>
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: linkedTest.passed ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>{linkedTest.passed ? "통과" : "미통과"}</span>
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: linkedTest.retest ? "var(--coral)" : "#e4d8ba", color: linkedTest.retest ? "#fff" : "#5c543e" }}>{linkedTest.retest ? "재시험 필요" : "재시험 없음"}</span>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
                 {dayRoutine.comment && <div className="text-sm mt-1" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>코멘트</b> · {dayRoutine.comment}</div>}
               </div>
             );
