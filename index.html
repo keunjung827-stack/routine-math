@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-38";
+const APP_VERSION = "2026-09-14-39";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -940,7 +941,7 @@ function TestsTab({ data, setData, scopeClassGroups }) {
   const add = () => {
     if (!studentId || !name.trim() || score === "") return;
     const student = data.students.find(s => s.id === studentId);
-    const entry = { id: uid(), studentId, name, testType, date, score: Number(score), passLine: Number(passLine) };
+    const entry = { id: uid(), studentId, name, testType, date, score: Number(score), passLine: Number(passLine), passed: Number(score) >= Number(passLine), retest: false, note: "" };
     const alerts = syncAlerts(data.alerts, `test:${entry.id}`, entry.score < entry.passLine, () => ({
       studentId, kind: "테스트 기준미달",
       message: `[루틴수학] ${student?.name || ""} 학생 [${testType}] "${entry.name}" 결과 ${entry.score}점 (기준 ${entry.passLine}점 미달)입니다.`,
@@ -949,6 +950,7 @@ function TestsTab({ data, setData, scopeClassGroups }) {
     setName(""); setScore("");
   };
   const remove = (id) => setData({ ...data, tests: data.tests.filter(t => t.id !== id), alerts: data.alerts.filter(a => a.sourceKey !== `test:${id}` || a.status !== "대기") });
+  const updateTestField = (testId, field, value) => setData({ ...data, tests: data.tests.map(t => t.id === testId ? { ...t, [field]: value } : t) });
   const list = data.tests.filter(t => scopedIds.has(t.studentId) && (!filter || t.studentId === filter)).sort((a, b) => b.date.localeCompare(a.date));
   const summaryByType = filter ? TEST_TYPES.map(tp => {
     const arr = data.tests.filter(t => t.studentId === filter && (t.testType || "일일테스트") === tp);
@@ -992,15 +994,23 @@ function TestsTab({ data, setData, scopeClassGroups }) {
           <ul className="flex flex-col gap-2">
             {list.map(t => {
               const low = t.score < t.passLine;
+              const passed = t.passed !== undefined ? t.passed : !low;
               return (
-                <li key={t.id} className="flex items-center justify-between p-3 rounded-lg" style={{ background: low ? "#f8e3c9" : "#efe6d0" }}>
-                  <div className="text-sm" style={{ color: "#4a4332" }}>
-                    <b style={{ color: "#2b2417" }}>{studentName(t.studentId)}</b> · {t.name} · {t.date}
-                    <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded-full" style={{ background: "#e4d8ba", color: "#5c543e" }}>{t.testType || "일일테스트"}</span>
-                    <span className="font-bold ml-2" style={{ color: low ? "var(--coral)" : "var(--gold)" }}>{t.score}점</span>
-                    <span className="text-xs" style={{ color: "#7a6f52" }}> (기준 {t.passLine}점)</span>
+                <li key={t.id} className="flex flex-col gap-2 p-3 rounded-lg" style={{ background: low ? "#f8e3c9" : "#efe6d0" }}>
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm" style={{ color: "#4a4332" }}>
+                      <b style={{ color: "#2b2417" }}>{studentName(t.studentId)}</b> · {t.name} · {t.date}
+                      <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded-full" style={{ background: "#e4d8ba", color: "#5c543e" }}>{t.testType || "주간테스트"}</span>
+                      <span className="font-bold ml-2" style={{ color: low ? "var(--coral)" : "var(--gold)" }}>{t.score}점</span>
+                      <span className="text-xs" style={{ color: "#7a6f52" }}> (기준 {t.passLine}점)</span>
+                    </div>
+                    <button onClick={() => remove(t.id)} className="p-1.5 rounded-md flex-shrink-0" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
                   </div>
-                  <button onClick={() => remove(t.id)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button onClick={() => updateTestField(t.id, "passed", !passed)} className="px-2.5 py-1 rounded-full text-xs font-semibold" style={{ background: passed ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>{passed ? "통과" : "미통과"}</button>
+                    <button onClick={() => updateTestField(t.id, "retest", !t.retest)} className="px-2.5 py-1 rounded-full text-xs font-semibold" style={{ background: t.retest ? "var(--coral)" : "#e4d8ba", color: t.retest ? "#fff" : "#5c543e" }}>{t.retest ? "재시험 필요" : "재시험 없음"}</button>
+                  </div>
+                  <input className={inputCls} style={{ ...inputStyle, padding: "6px 10px" }} placeholder="강사 메모 (선택)" value={t.note || ""} onChange={e => updateTestField(t.id, "note", e.target.value)} />
                 </li>
               );
             })}
@@ -1352,7 +1362,8 @@ function weeklyRoutineStats(data, studentId, weekStart) {
 
 function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButton, bare, hideTitle }) {
   const student = data.students.find(s => s.id === studentId);
-  const { weekRoutines, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown, classBreakdown } = weeklyRoutineStats(data, studentId, weekStart);
+  const { weekRoutines, itemAverages, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown, classBreakdown } = weeklyRoutineStats(data, studentId, weekStart);
+  const overall = weeklyPlannerTaskRate(data, studentId, weekStart);
 
   const sendReport = () => {
     const message = buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown, classBreakdown);
@@ -2115,7 +2126,7 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
   const removeComment = (id) => setData({ ...data, teacherComments: data.teacherComments.filter(c => c.id !== id) });
   const addNote = (text) => setData({ ...data, counselingNotes: [...data.counselingNotes, { id: uid(), studentId, date: todayStr(), text }] });
   const removeNote = (id) => setData({ ...data, counselingNotes: data.counselingNotes.filter(c => c.id !== id) });
-  const updateTestNote = (testId, note) => setData({ ...data, tests: data.tests.map(t => t.id === testId ? { ...t, note } : t) });
+  const updateTestField = (testId, field, value) => setData({ ...data, tests: data.tests.map(t => t.id === testId ? { ...t, [field]: value } : t) });
   const plannerCheck = (data.plannerChecks || []).find(c => c.studentId === studentId && c.date === plannerViewDate);
   const togglePlannerCheck = () => {
     const checks = data.plannerChecks || [];
@@ -2260,17 +2271,34 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
                   <p className="text-xs" style={{ color: "#8a7f5e" }}>기록 없음</p>
                 ) : (
                   <ul className="flex flex-col gap-1.5">
-                    {byType[tp].map(t => (
-                      <li key={t.id} className="p-2 rounded-lg flex flex-col gap-1.5" style={{ background: "#efe6d0" }}>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm" style={{ color: "#4a4332" }}>{t.date} · {t.name}</span>
-                          <span className="text-sm font-bold" style={{ color: t.score < t.passLine ? "var(--coral)" : "var(--gold)" }}>{t.score}점</span>
-                        </div>
-                        {canEdit ? (
-                          <input className={inputCls} style={{ ...inputStyle, padding: "6px 10px" }} placeholder="강사 메모 (선택)" value={t.note || ""} onChange={e => updateTestNote(t.id, e.target.value)} />
-                        ) : (t.note && <p className="text-xs" style={{ color: "#7a6f52" }}>{t.note}</p>)}
-                      </li>
-                    ))}
+                    {byType[tp].map(t => {
+                      const low = t.score < t.passLine;
+                      const passed = t.passed !== undefined ? t.passed : !low;
+                      return (
+                        <li key={t.id} className="p-2 rounded-lg flex flex-col gap-1.5" style={{ background: "#efe6d0" }}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm" style={{ color: "#4a4332" }}>{t.date} · {t.name}</span>
+                            <span className="text-sm font-bold" style={{ color: low ? "var(--coral)" : "var(--gold)" }}>{t.score}점</span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {canEdit ? (
+                              <>
+                                <button onClick={() => updateTestField(t.id, "passed", !passed)} className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: passed ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>{passed ? "통과" : "미통과"}</button>
+                                <button onClick={() => updateTestField(t.id, "retest", !t.retest)} className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: t.retest ? "var(--coral)" : "#e4d8ba", color: t.retest ? "#fff" : "#5c543e" }}>{t.retest ? "재시험 필요" : "재시험 없음"}</button>
+                              </>
+                            ) : (
+                              <>
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: passed ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>{passed ? "통과" : "미통과"}</span>
+                                {t.retest && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "var(--coral)", color: "#fff" }}>재시험 필요</span>}
+                              </>
+                            )}
+                          </div>
+                          {canEdit ? (
+                            <input className={inputCls} style={{ ...inputStyle, padding: "6px 10px" }} placeholder="강사 메모 (선택)" value={t.note || ""} onChange={e => updateTestField(t.id, "note", e.target.value)} />
+                          ) : (t.note && <p className="text-xs" style={{ color: "#7a6f52" }}>{t.note}</p>)}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
