@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-30";
+const APP_VERSION = "2026-09-14-32";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,8 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
 
 
 
@@ -305,6 +307,7 @@ const emptyData = () => ({
   classSchedules: {},
   messages: [],
   periodTimes: {},
+  plannerChecks: [],
 });
 
 function useAppData() {
@@ -1311,7 +1314,7 @@ function weeklyRoutineStats(data, studentId, weekStart) {
   return { weekRoutines, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown };
 }
 
-function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButton }) {
+function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButton, bare }) {
   const student = data.students.find(s => s.id === studentId);
   const { weekRoutines, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown } = weeklyRoutineStats(data, studentId, weekStart);
 
@@ -1321,8 +1324,8 @@ function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButt
     setData({ ...data, alerts: [...data.alerts, alert] });
   };
 
-  return (
-    <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+  const inner = (
+    <>
       <div>
         <h3 className="text-2xl font-bold" style={{ color: overall !== null && overall < PASS_RATE ? "var(--coral)" : "var(--gold)", fontFamily: "'Noto Serif KR', serif" }}>
           이번 주 실제 달성률 {overall === null ? "-" : `${overall}%`}
@@ -1365,8 +1368,11 @@ function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButt
       {showAlertButton && weekRoutines.length > 0 && (
         <button onClick={sendReport} className="self-start px-4 py-2 rounded-lg text-sm font-semibold" style={btnGold}>이번주 리포트 알림 생성</button>
       )}
-    </div>
+    </>
   );
+
+  if (bare) return inner;
+  return <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>{inner}</div>;
 }
 
 function WeeklyRoutineTab({ data, setData, scopeClassGroups }) {
@@ -2043,7 +2049,7 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
     const pureMinutes = blocks.filter(b => b.done).reduce((s, b) => s + minutesBetween(b.start, b.end), 0);
     return { date: d, done: blocks.filter(b => b.done).length, total: blocks.length, rate, pureMinutes };
   });
-  const avgRate = dayStats.length ? Math.round(dayStats.reduce((s, d) => s + d.rate, 0) / dayStats.length) : null;
+  const avgMinutes = dayStats.length ? Math.round(dayStats.reduce((s, d) => s + d.pureMinutes, 0) / dayStats.length) : null;
   const totalPureMinutes = dayStats.reduce((s, d) => s + d.pureMinutes, 0);
   const recentTests = tests.slice(-8);
   const avgScore = recentTests.length ? Math.round(recentTests.reduce((s, t) => s + t.score, 0) / recentTests.length) : null;
@@ -2061,6 +2067,13 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
   const removeComment = (id) => setData({ ...data, teacherComments: data.teacherComments.filter(c => c.id !== id) });
   const addNote = (text) => setData({ ...data, counselingNotes: [...data.counselingNotes, { id: uid(), studentId, date: todayStr(), text }] });
   const removeNote = (id) => setData({ ...data, counselingNotes: data.counselingNotes.filter(c => c.id !== id) });
+  const updateTestNote = (testId, note) => setData({ ...data, tests: data.tests.map(t => t.id === testId ? { ...t, note } : t) });
+  const plannerCheck = (data.plannerChecks || []).find(c => c.studentId === studentId && c.date === plannerViewDate);
+  const togglePlannerCheck = () => {
+    const checks = data.plannerChecks || [];
+    if (plannerCheck) setData({ ...data, plannerChecks: checks.filter(c => c.id !== plannerCheck.id) });
+    else setData({ ...data, plannerChecks: [...checks, { id: uid(), studentId, date: plannerViewDate, checked: true }] });
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -2069,7 +2082,7 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
         <p className="text-xs mb-3" style={{ color: "#7a6f52" }}>{student?.name} 학생 · {student?.grade}{student?.classGroup ? ` · ${student.classGroup}` : ""}</p>
         <div className="flex gap-3 flex-wrap">
           <StatCard label="최근 숙제 제출률" value={submittedRate === null ? "-" : `${submittedRate}%`} tone={submittedRate !== null && submittedRate < PASS_RATE ? "var(--coral)" : "var(--gold)"} />
-          <StatCard label="최근 평균 성취율" value={avgRate === null ? "-" : `${avgRate}%`} tone={avgRate !== null && avgRate < PASS_RATE ? "var(--coral)" : "var(--gold)"} />
+          <StatCard label="최근 평균 순공시간" value={avgMinutes === null ? "-" : formatMinutes(avgMinutes)} />
           <StatCard label="최근 테스트 평균" value={avgScore === null ? "-" : `${avgScore}점`} />
           <StatCard label="누적 순수 공부시간" value={formatMinutes(totalPureMinutes)} />
         </div>
@@ -2110,31 +2123,65 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
       <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
         <div className="flex items-center justify-between">
           <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>플래너 자세히 보기</h3>
-          <input type="date" className="rounded-lg px-2 py-1.5 text-xs" style={inputStyle} value={plannerViewDate} onChange={e => setPlannerViewDate(e.target.value)} />
+          <div className="flex items-center gap-2">
+            <input type="date" className="rounded-lg px-2 py-1.5 text-xs" style={inputStyle} value={plannerViewDate} onChange={e => setPlannerViewDate(e.target.value)} />
+            {canEdit && (
+              <button onClick={togglePlannerCheck} className="flex items-center gap-1 text-[10px] px-2 py-1.5 rounded-full font-semibold flex-shrink-0" style={{ background: plannerCheck ? "#4c8c5f" : "#e4d8ba", color: plannerCheck ? "#fff" : "#5c543e" }}>
+                {plannerCheck && <Check size={10} />}{plannerCheck ? "확인함" : "확인"}
+              </button>
+            )}
+          </div>
         </div>
         <PlannerTaskList data={data} setData={setData} studentId={studentId} date={plannerViewDate} readOnly />
         <DayTimeline blocks={data.plannerBlocks.filter(b => b.studentId === studentId && b.date === plannerViewDate)} />
+        <div className="pt-2 mt-1" style={{ borderTop: "1px solid #e4d8ba" }}>
+          <h4 className="text-sm font-semibold mb-2 mt-2" style={{ color: "#2b2417" }}>{plannerViewDate} 오늘의 루틴</h4>
+          {(() => {
+            const dayRoutine = data.routines.find(r => r.studentId === studentId && r.date === plannerViewDate);
+            if (!dayRoutine) return <EmptyState text="이 날짜에 기록된 오늘의 루틴이 없습니다." />;
+            const dp = (dayRoutine.items || []).find(it => it.key === "practice");
+            const dw = (dayRoutine.items || []).find(it => it.key === "wrong");
+            const dpc = Number(dp?.result) || 0, dwc = Number(dw?.result) || 0;
+            const dacc = dpc > 0 ? Math.round(((dpc - dwc) / dpc) * 100) : null;
+            const hwItem = (dayRoutine.items || []).find(it => it.key === "homework");
+            return (
+              <div className="flex flex-col gap-1.5">
+                {(dayRoutine.items || []).filter(it => it.kind === "choice").map(it => (
+                  <div key={it.key} className="text-sm" style={{ color: "#4a4332" }}>
+                    <b style={{ color: "#2b2417" }}>{it.label}</b> · {it.result || "-"}{it.note && <span style={{ color: "#7a6f52" }}> — {it.note}</span>}
+                  </div>
+                ))}
+                {dpc > 0 && <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>문제풀이</b> · {dpc}문제 · 오답 {dwc} · 정답률 {dacc}%</div>}
+                {hwItem && <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>숙제</b> · {hwItem.result === null ? "해당없음" : hwItem.result ? "제출완료" : (hwItem.overdue ? "기한 초과" : "미제출")}</div>}
+                {dayRoutine.testName && <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>{dayRoutine.testName}</b> · {dayRoutine.testScore}점</div>}
+                {dayRoutine.comment && <div className="text-xs" style={{ color: "#7a6f52" }}>코멘트: {dayRoutine.comment}</div>}
+              </div>
+            );
+          })()}
+        </div>
       </div>
 
-      <div className="rounded-2xl p-4" style={panel}>
-        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>오늘의 루틴 (강사 기록)</h3>
-        {recentRoutines.length === 0 ? <EmptyState text="강사가 입력한 루틴 기록이 없습니다." /> : (
-          <ul className="flex flex-col gap-2">
-            {recentRoutines.map(r => (
-              <li key={r.id} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
-                <span className="text-xs" style={{ color: "#7a6f52" }}>{r.date}</span>
-                <div className="flex gap-1">
-                  {(r.items || []).filter(it => it.kind === "choice" && it.result).map(it => (
-                    <span key={it.key} className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#e4d8ba", color: "#5c543e" }}>{it.result}</span>
-                  ))}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>오늘의 루틴</h3>
+        <WeeklyRoutineBlock data={data} setData={setData} studentId={studentId} weekStart={mondayOf(todayStr())} showAlertButton={canEdit} bare />
+        <div className="pt-2 mt-1" style={{ borderTop: "1px solid #e4d8ba" }}>
+          <h4 className="text-sm font-semibold mb-2 mt-2" style={{ color: "#2b2417" }}>일별 기록</h4>
+          {recentRoutines.length === 0 ? <EmptyState text="강사가 입력한 루틴 기록이 없습니다." /> : (
+            <ul className="flex flex-col gap-2">
+              {recentRoutines.map(r => (
+                <li key={r.id} onClick={() => setPlannerViewDate(r.date)} className="flex items-center justify-between p-2.5 rounded-lg cursor-pointer" style={{ background: r.date === plannerViewDate ? "#efe3c8" : "#efe6d0" }}>
+                  <span className="text-xs" style={{ color: "#7a6f52" }}>{r.date}</span>
+                  <div className="flex gap-1">
+                    {(r.items || []).filter(it => it.kind === "choice" && it.result).map(it => (
+                      <span key={it.key} className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#e4d8ba", color: "#5c543e" }}>{it.result}</span>
+                    ))}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
-
-      <WeeklyRoutineBlock data={data} setData={setData} studentId={studentId} weekStart={mondayOf(todayStr())} showAlertButton={canEdit} />
 
       <div className="rounded-2xl p-4" style={panel}>
         <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>출결 기록</h3>
@@ -2170,9 +2217,14 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
                 ) : (
                   <ul className="flex flex-col gap-1.5">
                     {byType[tp].map(t => (
-                      <li key={t.id} className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
-                        <span className="text-sm" style={{ color: "#4a4332" }}>{t.date} · {t.name}</span>
-                        <span className="text-sm font-bold" style={{ color: t.score < t.passLine ? "var(--coral)" : "var(--gold)" }}>{t.score}점</span>
+                      <li key={t.id} className="p-2 rounded-lg flex flex-col gap-1.5" style={{ background: "#efe6d0" }}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm" style={{ color: "#4a4332" }}>{t.date} · {t.name}</span>
+                          <span className="text-sm font-bold" style={{ color: t.score < t.passLine ? "var(--coral)" : "var(--gold)" }}>{t.score}점</span>
+                        </div>
+                        {canEdit ? (
+                          <input className={inputCls} style={{ ...inputStyle, padding: "6px 10px" }} placeholder="강사 메모 (선택)" value={t.note || ""} onChange={e => updateTestNote(t.id, e.target.value)} />
+                        ) : (t.note && <p className="text-xs" style={{ color: "#7a6f52" }}>{t.note}</p>)}
                       </li>
                     ))}
                   </ul>
