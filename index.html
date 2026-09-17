@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-32";
+const APP_VERSION = "2026-09-14-34";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,8 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
 
 
 
@@ -1314,7 +1316,7 @@ function weeklyRoutineStats(data, studentId, weekStart) {
   return { weekRoutines, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown };
 }
 
-function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButton, bare }) {
+function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButton, bare, hideTitle }) {
   const student = data.students.find(s => s.id === studentId);
   const { weekRoutines, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown } = weeklyRoutineStats(data, studentId, weekStart);
 
@@ -1326,11 +1328,13 @@ function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButt
 
   const inner = (
     <>
-      <div>
-        <h3 className="text-2xl font-bold" style={{ color: overall !== null && overall < PASS_RATE ? "var(--coral)" : "var(--gold)", fontFamily: "'Noto Serif KR', serif" }}>
-          이번 주 실제 달성률 {overall === null ? "-" : `${overall}%`}
-        </h3>
-      </div>
+      {!hideTitle && (
+        <div>
+          <h3 className="text-2xl font-bold" style={{ color: overall !== null && overall < PASS_RATE ? "var(--coral)" : "var(--gold)", fontFamily: "'Noto Serif KR', serif" }}>
+            이번 주 실제 달성률 {overall === null ? "-" : `${overall}%`}
+          </h3>
+        </div>
+      )}
       {weekRoutines.length === 0 ? <EmptyState text="이번 주 등록된 오늘의 루틴 기록이 없습니다." /> : (
         <ul className="flex flex-col gap-1.5">
           {(reviewBreakdown.P + reviewBreakdown.C) > 0 && (
@@ -2050,10 +2054,12 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
     return { date: d, done: blocks.filter(b => b.done).length, total: blocks.length, rate, pureMinutes };
   });
   const avgMinutes = dayStats.length ? Math.round(dayStats.reduce((s, d) => s + d.pureMinutes, 0) / dayStats.length) : null;
+  const weekOverall = weeklyRoutineStats(data, studentId, mondayOf(todayStr())).overall;
   const totalPureMinutes = dayStats.reduce((s, d) => s + d.pureMinutes, 0);
   const recentTests = tests.slice(-8);
   const avgScore = recentTests.length ? Math.round(recentTests.reduce((s, t) => s + t.score, 0) / recentTests.length) : null;
   const recentRoutines = data.routines.filter(r => r.studentId === studentId).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 7);
+  const [routineViewDate, setRoutineViewDate] = useState(recentRoutines[0]?.date || todayStr());
 
   const byType = {};
   const typeStats = {};
@@ -2107,7 +2113,8 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
       </div>
 
       <div className="rounded-2xl p-4" style={panel}>
-        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>② 일일 학습량 (플래너 타임테이블)</h3>
+        <h3 className="font-bold mb-1" style={{ fontFamily: "'Noto Serif KR', serif" }}>② 일일 학습량 (플래너 타임테이블)</h3>
+        <div className="text-sm font-bold mb-2" style={{ color: weekOverall !== null && weekOverall < PASS_RATE ? "var(--coral)" : "var(--gold)" }}>이번 주 실제 달성률 {weekOverall === null ? "-" : `${weekOverall}%`}</div>
         {dayStats.length === 0 ? <EmptyState text="기록이 없습니다." /> : (
           <ul className="flex flex-col gap-2">
             {dayStats.map(d => (
@@ -2134,11 +2141,20 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
         </div>
         <PlannerTaskList data={data} setData={setData} studentId={studentId} date={plannerViewDate} readOnly />
         <DayTimeline blocks={data.plannerBlocks.filter(b => b.studentId === studentId && b.date === plannerViewDate)} />
-        <div className="pt-2 mt-1" style={{ borderTop: "1px solid #e4d8ba" }}>
-          <h4 className="text-sm font-semibold mb-2 mt-2" style={{ color: "#2b2417" }}>{plannerViewDate} 오늘의 루틴</h4>
+      </div>
+
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>오늘의 루틴</h3>
+          <input type="date" className="rounded-lg px-2 py-1.5 text-xs" style={inputStyle} value={routineViewDate} onChange={e => setRoutineViewDate(e.target.value)} />
+        </div>
+        <div className="pt-1">
+          <h4 className="text-sm font-semibold mb-2" style={{ color: "#2b2417" }}>{routineViewDate} 기록</h4>
           {(() => {
-            const dayRoutine = data.routines.find(r => r.studentId === studentId && r.date === plannerViewDate);
+            const dayRoutine = data.routines.find(r => r.studentId === studentId && r.date === routineViewDate);
             if (!dayRoutine) return <EmptyState text="이 날짜에 기록된 오늘의 루틴이 없습니다." />;
+            const classItem = (dayRoutine.items || []).find(it => it.key === "class");
+            const reviewItem = (dayRoutine.items || []).find(it => it.key === "review");
             const dp = (dayRoutine.items || []).find(it => it.key === "practice");
             const dw = (dayRoutine.items || []).find(it => it.key === "wrong");
             const dpc = Number(dp?.result) || 0, dwc = Number(dw?.result) || 0;
@@ -2146,11 +2162,16 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
             const hwItem = (dayRoutine.items || []).find(it => it.key === "homework");
             return (
               <div className="flex flex-col gap-1.5">
-                {(dayRoutine.items || []).filter(it => it.kind === "choice").map(it => (
-                  <div key={it.key} className="text-sm" style={{ color: "#4a4332" }}>
-                    <b style={{ color: "#2b2417" }}>{it.label}</b> · {it.result || "-"}{it.note && <span style={{ color: "#7a6f52" }}> — {it.note}</span>}
+                {classItem && (
+                  <div className="text-sm" style={{ color: "#4a4332" }}>
+                    <b style={{ color: "#2b2417" }}>{classItem.label}</b> · {classItem.result || "-"}{classItem.note && <span style={{ color: "#7a6f52" }}> — {classItem.note}</span>}
                   </div>
-                ))}
+                )}
+                {reviewItem && (
+                  <div className="text-sm" style={{ color: "#4a4332" }}>
+                    <b style={{ color: "#2b2417" }}>{reviewItem.label}</b> · {reviewItem.result || "-"}{reviewItem.note && <span style={{ color: "#7a6f52" }}> — {reviewItem.note}</span>}
+                  </div>
+                )}
                 {dpc > 0 && <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>문제풀이</b> · {dpc}문제 · 오답 {dwc} · 정답률 {dacc}%</div>}
                 {hwItem && <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>숙제</b> · {hwItem.result === null ? "해당없음" : hwItem.result ? "제출완료" : (hwItem.overdue ? "기한 초과" : "미제출")}</div>}
                 {dayRoutine.testName && <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>{dayRoutine.testName}</b> · {dayRoutine.testScore}점</div>}
@@ -2159,27 +2180,8 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
             );
           })()}
         </div>
-      </div>
-
-      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
-        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>오늘의 루틴</h3>
-        <WeeklyRoutineBlock data={data} setData={setData} studentId={studentId} weekStart={mondayOf(todayStr())} showAlertButton={canEdit} bare />
         <div className="pt-2 mt-1" style={{ borderTop: "1px solid #e4d8ba" }}>
-          <h4 className="text-sm font-semibold mb-2 mt-2" style={{ color: "#2b2417" }}>일별 기록</h4>
-          {recentRoutines.length === 0 ? <EmptyState text="강사가 입력한 루틴 기록이 없습니다." /> : (
-            <ul className="flex flex-col gap-2">
-              {recentRoutines.map(r => (
-                <li key={r.id} onClick={() => setPlannerViewDate(r.date)} className="flex items-center justify-between p-2.5 rounded-lg cursor-pointer" style={{ background: r.date === plannerViewDate ? "#efe3c8" : "#efe6d0" }}>
-                  <span className="text-xs" style={{ color: "#7a6f52" }}>{r.date}</span>
-                  <div className="flex gap-1">
-                    {(r.items || []).filter(it => it.kind === "choice" && it.result).map(it => (
-                      <span key={it.key} className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#e4d8ba", color: "#5c543e" }}>{it.result}</span>
-                    ))}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+          <WeeklyRoutineBlock data={data} setData={setData} studentId={studentId} weekStart={mondayOf(todayStr())} showAlertButton={canEdit} bare hideTitle />
         </div>
       </div>
 
