@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-49";
+const APP_VERSION = "2026-09-14-51";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,8 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
 
 
 
@@ -788,11 +790,24 @@ function PlannerTab({ data, setData }) {
 }
 
 // ================= ADMIN: 숙제 제출 =================
+function PhotoLightbox({ src, onClose }) {
+  if (!src) return null;
+  return (
+    <div onClick={onClose} className="fixed inset-0 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.8)", zIndex: 9999 }}>
+      <img src={src} alt="확대 보기" className="rounded-lg" style={{ maxWidth: "100%", maxHeight: "90vh", objectFit: "contain" }} />
+      <button onClick={onClose} className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.9)" }}>
+        <X size={20} color="#2b2417" />
+      </button>
+    </div>
+  );
+}
+
 function HomeworkTab({ data, setData, scopeClassGroups }) {
   const [date, setDate] = useState(todayStr());
   const [dueDate, setDueDate] = useState(todayStr());
   const [studentId, setStudentId] = useState("");
   const [title, setTitle] = useState("");
+  const [lightboxSrc, setLightboxSrc] = useState(null);
   const scopedStudents = studentsInScope(data.students, scopeClassGroups);
   const scopedIds = new Set(scopedStudents.map(s => s.id));
   const dayEntries = data.homeworks.filter(h => h.date === date && scopedIds.has(h.studentId));
@@ -852,7 +867,7 @@ function HomeworkTab({ data, setData, scopeClassGroups }) {
                       ) : null;
                     })()}
                     {(h.photos || (h.photo ? [h.photo] : [])).map((src, i) => (
-                      <img key={i} src={src} onClick={() => window.open(src, "_blank")} alt="질문 사진" className="rounded-md cursor-pointer flex-shrink-0" style={{ height: 52, width: 52, objectFit: "cover", border: "1px solid #e4d8ba" }} />
+                      <img key={i} src={src} onClick={() => setLightboxSrc(src)} alt="질문 사진" className="rounded-md cursor-pointer flex-shrink-0" style={{ height: 52, width: 52, objectFit: "cover", border: "1px solid #e4d8ba" }} />
                     ))}
                     {h.note && <p className="text-xs" style={{ color: "#7a6f52" }}>{h.note}</p>}
                   </div>
@@ -862,6 +877,7 @@ function HomeworkTab({ data, setData, scopeClassGroups }) {
           </ul>
         )}
       </div>
+      <PhotoLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   );
 }
@@ -2415,7 +2431,7 @@ function AdminHome({ data, onOpen, onExit }) {
   const pendingMessages = pendingMessageThreads(data);
   const badgeFor = { comm: pendingAlerts + pendingRequests + pendingMessages };
   return (
-    <div className="min-h-screen px-5 py-6" style={{ background: "#f6f1e4" }}>
+    <div className="min-h-screen px-5 pb-6" style={{ background: "#f6f1e4", paddingTop: "max(24px, calc(env(safe-area-inset-top) + 16px))" }}>
       <div className="flex items-center justify-between mb-1">
         <div className="text-[10px] tracking-[0.3em]" style={{ color: "var(--gold)" }}>ROUTINE MATH ACADEMY</div>
         <button onClick={onExit} className="text-xs px-3 py-1.5 rounded-lg" style={{ border: "1px solid #ddcda0", color: "#7a6f52" }}>나가기</button>
@@ -2455,7 +2471,7 @@ function AdminPanel({ data, setData, onExit }) {
   const Comp = COMPONENT_MAP[subTab] || Dashboard;
 
   return (
-    <div className="min-h-screen px-5 py-6" style={{ background: "#f6f1e4" }}>
+    <div className="min-h-screen px-5 pb-6" style={{ background: "#f6f1e4", paddingTop: "max(24px, calc(env(safe-area-inset-top) + 16px))" }}>
       <BackHeader title={group.label} onBack={() => setOpenGroup(null)} />
       <div className="max-w-lg mx-auto">
         {group.tabs.length > 1 && (
@@ -2874,7 +2890,7 @@ function TeacherHome({ data, setData, teacher, onLogout }) {
   const pendingMessages = pendingMessageThreads(data, teacher.classGroups);
   const commBadge = pendingAlerts + pendingRequests + pendingMessages;
   return (
-    <div className="min-h-screen px-5 py-6" style={{ background: "#f6f1e4" }}>
+    <div className="min-h-screen px-5 pb-6" style={{ background: "#f6f1e4", paddingTop: "max(24px, calc(env(safe-area-inset-top) + 16px))" }}>
       <div className="flex items-center justify-between mb-4">
         <div>
           <div className="text-xs" style={{ color: "var(--gold)" }}>루틴수학학원 · 강사 모드</div>
@@ -3542,7 +3558,7 @@ function StudentHome({ data, setData, studentId, onLogout }) {
   const seenVideoIds = new Set(student?.seenVideoIds || []);
   const newVideoCount = data.videos.filter(v => (v.target === "ALL" || v.target === student?.grade) && !seenVideoIds.has(v.id)).length;
   return (
-    <div className="min-h-screen px-5 py-6" style={{ background: "#f6f1e4" }}>
+    <div className="min-h-screen px-5 pb-6" style={{ background: "#f6f1e4", paddingTop: "max(24px, calc(env(safe-area-inset-top) + 16px))" }}>
       <div className="flex items-center justify-between mb-4">
         <div>
           <div className="text-xs" style={{ color: "var(--gold)" }}>루틴수학학원 · 학생 모드</div>
