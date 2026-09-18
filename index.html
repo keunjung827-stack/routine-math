@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-65";
+const APP_VERSION = "2026-09-14-66";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -1205,10 +1206,11 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
                           <div key={h.id} className="flex flex-col gap-1 text-[11px] px-2 py-1.5 rounded-md" style={{ background: "#fffcf6" }}>
                             <div className="flex items-center justify-between">
                               <span style={{ color: "#4a4332" }}>{h.title} ({h.date}){photoCount > 0 && ` · 질문 ${photoCount}개`}</span>
-                              <span className="font-semibold" style={{ color: !h.submitted ? "var(--coral)" : (isLate ? "var(--gold)" : "#4c8c5f") }}>
-                                {!h.submitted ? "미제출" : (isLate ? `기한초과 제출 (${timeStr})` : `제출 (${timeStr})`)}
+                              <span className="font-semibold" style={{ color: !h.submitted ? "var(--coral)" : (isLate ? "var(--coral)" : "#4c8c5f") }}>
+                                {!h.submitted ? "미제출" : (isLate ? `제출 (${timeStr})` : `제출 (${timeStr})`)}
                               </span>
                             </div>
+                            {isLate && <p className="text-[10px]" style={{ color: "var(--coral)" }}>제출기한을 초과했습니다</p>}
                             {studyTotal > 0 && (
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span style={{ color: "#8a7f5e" }}>{submittedDateStr} 순공시간</span>
