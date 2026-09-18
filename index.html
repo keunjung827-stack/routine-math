@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-43";
+const APP_VERSION = "2026-09-14-44";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -3124,7 +3125,7 @@ function StudyTimer({ data, setData, studentId }) {
 }
 
 // 하루 학습 타임테이블 (사진 속 다이어리처럼 시간대별 막대로 시각화)
-const SUBJECT_PALETTE = ["#2f6fb0", "#3ea05a", "#d94f3d", "#9450c4", "#d4a017", "#c14f8a", "#2f9e8f", "#8a5a2f", "#5566d4", "#5c5c5c"];
+const SUBJECT_PALETTE = ["#e63946", "#f77f00", "#d4a017", "#2a9d3e", "#1d6fd6", "#7b2cbf"];
 function colorForSubject(subject) {
   const s = subject || "";
   let hash = 0;
@@ -3150,19 +3151,24 @@ function DayTimeline({ blocks }) {
     <div className="flex flex-col gap-2">
       <div className="flex gap-2">
         <div className="flex-shrink-0" style={{ width: 30 }}>
-          {hourMarks.map(m => (
-            <div key={m} style={{ height: rowHeight, color: "#a89d84" }} className="text-[10px] relative">
-              <span style={{ position: "absolute", top: -6 }}>{m % 24 || 24}시</span>
-            </div>
-          ))}
+          {hourMarks.map(m => {
+            const hourVal = m / 60;
+            const displayHour = hourVal > 24 ? hourVal - 24 : hourVal;
+            return (
+              <div key={m} style={{ height: rowHeight, color: "#a89d84" }} className="text-[10px] relative">
+                <span style={{ position: "absolute", top: -6 }}>{displayHour}시</span>
+              </div>
+            );
+          })}
         </div>
-        <div className="relative flex-1 rounded-lg overflow-hidden" style={{
-          height: totalHeight, border: "1px solid #e4d8ba",
-          backgroundColor: "#fffcf6",
-          backgroundImage: "repeating-linear-gradient(to bottom, transparent, transparent 4px, #f7f0dd 4px, #f7f0dd 5px), repeating-linear-gradient(to right, transparent, transparent 4px, #f7f0dd 4px, #f7f0dd 5px)",
-        }}>
+        <div className="relative flex-1 rounded-lg overflow-hidden" style={{ height: totalHeight, border: "1px solid #e4d8ba", background: "#fffcf6" }}>
           {hourMarks.map((m, i) => (
             <div key={m} style={{ position: "absolute", top: i * rowHeight, left: 0, right: 0, borderTop: "1px solid #e4d8ba" }} />
+          ))}
+          {hourMarks.slice(0, -1).flatMap((m, i) => (
+            [1, 2, 3, 4, 5].map(sub => (
+              <div key={`${m}-${sub}`} style={{ position: "absolute", top: i * rowHeight + (sub * rowHeight) / 6, left: 0, right: 0, borderTop: "1px dotted #f0e6cc" }} />
+            ))
           ))}
           {blocks.map(b => {
             const roundTo10 = (mins) => Math.round(mins / 10) * 10;
