@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-45";
+const APP_VERSION = "2026-09-14-46";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -3150,6 +3151,14 @@ function DayTimeline({ blocks }) {
 
   return (
     <div className="flex flex-col gap-2">
+      <div className="flex items-stretch">
+        <div className="flex-shrink-0" style={{ width: 30 }} />
+        <div className="relative flex-1 flex">
+          {["10분", "20분", "30분", "40분", "50분", "60분"].map((label, i) => (
+            <div key={i} className="flex-1 text-[10px] text-center" style={{ color: "#a89d84" }}>{label}</div>
+          ))}
+        </div>
+      </div>
       <div className="rounded-lg overflow-hidden" style={{ border: "1px solid #e4d8ba", background: "#fffcf6" }}>
         {hours.map(h => {
           const hourStart = h * 60, hourEnd = h * 60 + 60;
@@ -3167,7 +3176,7 @@ function DayTimeline({ blocks }) {
           }).filter(Boolean);
           return (
             <div key={h} className="flex items-stretch" style={{ height: rowHeight, borderTop: h === rangeStartHour ? "none" : "1px solid #e4d8ba" }}>
-              <div className="flex-shrink-0 text-[10px] flex items-center justify-end pr-1" style={{ width: 30, color: "#a89d84" }}>{displayHour}시</div>
+              <div className="flex-shrink-0 text-[10px] flex items-center justify-end pr-1" style={{ width: 30, color: "#a89d84", borderRight: "1px solid #e4d8ba" }}>{displayHour}시</div>
               <div className="relative flex-1">
                 {[1, 2, 3, 4, 5].map(c => (
                   <div key={c} style={{ position: "absolute", left: `${(c * 100) / 6}%`, top: 0, bottom: 0, borderLeft: "1px dotted #ecdfc0" }} />
