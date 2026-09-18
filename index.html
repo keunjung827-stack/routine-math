@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-44";
+const APP_VERSION = "2026-09-14-45";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -3137,51 +3138,47 @@ function DayTimeline({ blocks }) {
   if (blocks.length === 0) return <EmptyState text="이 날짜에 기록된 공부 시간이 없습니다." />;
   const toMinutes = (hhmm) => { const [h, m] = (hhmm || "00:00").split(":").map(Number); return h * 60 + m; };
   // 당일 오전 6시 ~ 다음날 새벽 3시 고정 (21시간)
-  const rangeStart = 6 * 60;
-  const rangeEnd = 27 * 60;
-  const totalMinutes = rangeEnd - rangeStart;
-  const rowHeight = 34;
-  const totalHeight = (totalMinutes / 60) * rowHeight;
-  const hourMarks = [];
-  for (let m = rangeStart; m <= rangeEnd; m += 60) hourMarks.push(m);
+  const rangeStartHour = 6;
+  const rangeEndHour = 27; // 다음날 새벽 3시
+  const rowHeight = 30;
+  const wrapMinutes = (mins) => (mins < 180 ? mins + 24 * 60 : mins); // 자정 넘어가는 시각 보정 (예: 00:30 → 24:30)
   const subjects = [...new Set(blocks.map(b => b.subject).filter(Boolean))];
-  const wrapMinutes = (mins) => (mins < rangeStart - 180 ? mins + 24 * 60 : mins); // 자정 넘어가는 시각 보정 (예: 00:30 → 24:30)
+  const wrappedBlocks = blocks.map(b => ({ ...b, s: wrapMinutes(toMinutes(b.start)), e: wrapMinutes(toMinutes(b.end)) }));
+
+  const hours = [];
+  for (let h = rangeStartHour; h < rangeEndHour; h++) hours.push(h);
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex gap-2">
-        <div className="flex-shrink-0" style={{ width: 30 }}>
-          {hourMarks.map(m => {
-            const hourVal = m / 60;
-            const displayHour = hourVal > 24 ? hourVal - 24 : hourVal;
-            return (
-              <div key={m} style={{ height: rowHeight, color: "#a89d84" }} className="text-[10px] relative">
-                <span style={{ position: "absolute", top: -6 }}>{displayHour}시</span>
+      <div className="rounded-lg overflow-hidden" style={{ border: "1px solid #e4d8ba", background: "#fffcf6" }}>
+        {hours.map(h => {
+          const hourStart = h * 60, hourEnd = h * 60 + 60;
+          const displayHour = h > 24 ? h - 24 : h;
+          const segments = wrappedBlocks.map(b => {
+            const os = Math.max(b.s, hourStart), oe = Math.min(b.e, hourEnd);
+            if (oe <= os) return null;
+            return {
+              id: b.id + "-" + h,
+              leftPct: ((os - hourStart) / 60) * 100,
+              widthPct: ((oe - os) / 60) * 100,
+              color: b.done === false ? "#e4d8ba" : colorForSubject(b.subject),
+              opacity: b.done === false ? 0.6 : 1,
+            };
+          }).filter(Boolean);
+          return (
+            <div key={h} className="flex items-stretch" style={{ height: rowHeight, borderTop: h === rangeStartHour ? "none" : "1px solid #e4d8ba" }}>
+              <div className="flex-shrink-0 text-[10px] flex items-center justify-end pr-1" style={{ width: 30, color: "#a89d84" }}>{displayHour}시</div>
+              <div className="relative flex-1">
+                {[1, 2, 3, 4, 5].map(c => (
+                  <div key={c} style={{ position: "absolute", left: `${(c * 100) / 6}%`, top: 0, bottom: 0, borderLeft: "1px dotted #ecdfc0" }} />
+                ))}
+                {segments.map(seg => (
+                  <div key={seg.id} className="absolute rounded-sm" style={{ left: `${seg.leftPct}%`, width: `${seg.widthPct}%`, top: 3, bottom: 3, background: seg.color, opacity: seg.opacity }} />
+                ))}
               </div>
-            );
-          })}
-        </div>
-        <div className="relative flex-1 rounded-lg overflow-hidden" style={{ height: totalHeight, border: "1px solid #e4d8ba", background: "#fffcf6" }}>
-          {hourMarks.map((m, i) => (
-            <div key={m} style={{ position: "absolute", top: i * rowHeight, left: 0, right: 0, borderTop: "1px solid #e4d8ba" }} />
-          ))}
-          {hourMarks.slice(0, -1).flatMap((m, i) => (
-            [1, 2, 3, 4, 5].map(sub => (
-              <div key={`${m}-${sub}`} style={{ position: "absolute", top: i * rowHeight + (sub * rowHeight) / 6, left: 0, right: 0, borderTop: "1px dotted #f0e6cc" }} />
-            ))
-          ))}
-          {blocks.map(b => {
-            const roundTo10 = (mins) => Math.round(mins / 10) * 10;
-            const s = roundTo10(wrapMinutes(toMinutes(b.start)));
-            const e = Math.max(s + 10, roundTo10(wrapMinutes(toMinutes(b.end))));
-            const top = ((s - rangeStart) / 60) * rowHeight;
-            const height = Math.max(6, ((e - s) / 60) * rowHeight - 2);
-            return (
-              <div key={b.id} className="absolute rounded-md"
-                style={{ top: top + 1, height, left: 3, right: 3, background: b.done === false ? "#e4d8ba" : colorForSubject(b.subject), opacity: b.done === false ? 0.6 : 1 }} />
-            );
-          })}
-        </div>
+            </div>
+          );
+        })}
       </div>
       {subjects.length > 0 && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 px-1">
