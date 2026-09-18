@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-61";
+const APP_VERSION = "2026-09-14-63";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,8 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
 
 
 
@@ -1101,10 +1103,11 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
     const student = data.students.find(s => s.id === studentId);
     const hwSummary = todaysHomeworks.map(h => {
       const photoCount = (h.photos || (h.photo ? [h.photo] : [])).length;
-      if (!h.submitted) return `${h.title} 미제출`;
+      const dueRef = h.dueDate || h.date;
+      if (!h.submitted) return `- ${h.title} (${dueRef} 기한) : 미제출`;
       const timeStr = h.submittedAt ? new Date(h.submittedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
-      return `${h.title} ${timeStr}${h.submittedLate ? " (기한초과)" : ""}${photoCount > 0 ? ` · 질문 ${photoCount}개` : ""}`;
-    }).join(", ");
+      return `- ${h.title} (${dueRef} 기한) : ${h.submittedLate ? "기한초과 제출" : "제출"} ${timeStr}${photoCount > 0 ? ` · 질문 ${photoCount}개` : ""}`;
+    }).join("\n");
     const hwAutoStatus = todaysHomeworks.length === 0 ? null :
       todaysHomeworks.some(h => !h.submitted) ? "미제출" :
       todaysHomeworks.some(h => h.submittedLate) ? "기한초과" : "완료";
@@ -1344,7 +1347,7 @@ function buildDailyReportText(student, date, items, testName, testScore, comment
       lines.push(`${it.label} · ${statusText}`);
     } else if (it.kind === "choice") {
       const opt = (it.options || []).find(o => o.value === it.result);
-      lines.push(`${it.label} · ${opt ? `${opt.value} (${opt.label})` : "-"}${it.note ? ` — ${it.note}` : ""}`);
+      lines.push(`${it.label} · ${opt ? `${opt.value} (${opt.label})` : "-"}${it.note ? (it.note.includes("\n") ? `\n${it.note}` : ` — ${it.note}`) : ""}`);
     }
   });
   if (testName) {
@@ -1368,11 +1371,7 @@ function buildWeeklyReportText(student, weekStart, itemAverages, overall, testAv
   lines.push("");
   lines.push(`이번 주 실제 달성률 ${overall === null ? "-" : `${overall}%`}`);
   lines.push("");
-  if (reviewBreakdown && (reviewBreakdown.P + reviewBreakdown.C) > 0) {
-    const reviewRate = Math.min(100, Math.round((reviewBreakdown.C / 3) * 100));
-    lines.push(`개념복습 (목표 3회) 완료 ${reviewBreakdown.C}회 · 완료율 ${reviewRate}%`);
-    if (struggleStreak >= 3) lines.push(`⚠️ 완료 후 ${struggleStreak}회 연속 진행중 — 진도수업 재학습 권장`);
-  }
+  if (struggleStreak >= 3) lines.push(`⚠️ 개념복습 완료 후 ${struggleStreak}회 연속 진행중 — 진도수업 재학습 권장`);
   itemAverages.forEach(it => {
     lines.push(`${it.label} ${it.avg === null ? "기록없음" : `${it.avg}%`}`);
   });
@@ -1476,15 +1475,9 @@ function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButt
       )}
       {weekRoutines.length === 0 ? <EmptyState text="이번 주 등록된 오늘의 루틴 기록이 없습니다." /> : (
         <ul className="flex flex-col gap-1.5">
-          {(reviewBreakdown.P + reviewBreakdown.C) > 0 && (
-            <li className="flex flex-col gap-1 p-2 rounded-lg" style={{ background: "#efe6d0" }}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm" style={{ color: "#2b2417" }}>개념복습 (목표 3회)</span>
-                <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>완료 {reviewBreakdown.C}회 · 완료율 {Math.min(100, Math.round((reviewBreakdown.C / 3) * 100))}%</span>
-              </div>
-              {struggleStreak >= 3 && (
-                <p className="text-xs font-semibold" style={{ color: "var(--coral)" }}>⚠️ 완료 후 {struggleStreak}회 연속 진행중 — 학생이 어려워하고 있어요. 진도수업 재학습을 권장해요.</p>
-              )}
+          {struggleStreak >= 3 && (
+            <li className="flex flex-col gap-1 p-2 rounded-lg" style={{ background: "#f8e3c9" }}>
+              <p className="text-xs font-semibold" style={{ color: "var(--coral)" }}>⚠️ 개념복습 완료 후 {struggleStreak}회 연속 진행중 — 학생이 어려워하고 있어요. 진도수업 재학습을 권장해요.</p>
             </li>
           )}
           {itemAverages.map(it => (
@@ -2332,7 +2325,12 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
                   </div>
                 )}
                 {dpc > 0 && <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>문제풀이</b> · {dpc}문제 · 오답 {dwc} · 정답률 {dacc}%</div>}
-                {hwItem && <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>숙제</b> · {hwItem.result || "선택 안 함"}{hwItem.note && <span style={{ color: "#7a6f52" }}> — {hwItem.note}</span>}</div>}
+                {hwItem && (
+                  <div className="text-sm" style={{ color: "#4a4332" }}>
+                    <b style={{ color: "#2b2417" }}>숙제</b> · {hwItem.result || "선택 안 함"}
+                    {hwItem.note && <div className="text-xs mt-0.5" style={{ color: "#7a6f52", whiteSpace: "pre-line" }}>{hwItem.note}</div>}
+                  </div>
+                )}
                 {dayRoutine.testName && (() => {
                   const linkedTest = data.tests.find(t => t.id === `routine-${dayRoutine.id}`);
                   return (
