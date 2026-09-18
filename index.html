@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-57";
+const APP_VERSION = "2026-09-14-58";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -1207,6 +1208,22 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
                       })}
                     </div>
                   )}
+                  {(() => {
+                    const dayBlocks = studentId ? data.plannerBlocks.filter(b => b.studentId === studentId && b.date === date && b.done) : [];
+                    if (dayBlocks.length === 0) return null;
+                    const totalMin = dayBlocks.reduce((s, b) => s + minutesBetween(b.start, b.end), 0);
+                    const bySubj = {};
+                    dayBlocks.forEach(b => { if (b.subject) bySubj[b.subject] = (bySubj[b.subject] || 0) + minutesBetween(b.start, b.end); });
+                    return (
+                      <div className="flex items-center gap-1.5 flex-wrap pt-1" style={{ borderTop: "1px dashed #e4d8ba" }}>
+                        <span className="text-[11px]" style={{ color: "#8a7f5e" }}>{date} 순공시간</span>
+                        <span className="text-xs font-bold" style={{ color: "var(--gold)" }}>{formatMinutes(totalMin)}</span>
+                        {Object.entries(bySubj).map(([subj, min]) => (
+                          <span key={subj} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-white" style={{ background: colorForSubject(subj) }}>{subj} {formatMinutes(min)}</span>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             }
