@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-51";
+const APP_VERSION = "2026-09-14-53";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,8 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
 
 
 
@@ -2151,7 +2153,8 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
     const blocks = data.plannerBlocks.filter(b => b.studentId === studentId && b.date === d);
     const rate = blocks.length ? Math.round((blocks.filter(b => b.done).length / blocks.length) * 100) : 0;
     const pureMinutes = blocks.filter(b => b.done).reduce((s, b) => s + minutesBetween(b.start, b.end), 0);
-    return { date: d, done: blocks.filter(b => b.done).length, total: blocks.length, rate, pureMinutes };
+    const subjects = [...new Set(blocks.filter(b => b.done).map(b => b.subject).filter(Boolean))];
+    return { date: d, done: blocks.filter(b => b.done).length, total: blocks.length, rate, pureMinutes, subjects };
   });
   const avgMinutes = dayStats.length ? Math.round(dayStats.reduce((s, d) => s + d.pureMinutes, 0) / dayStats.length) : null;
   const weekOverall = weeklyPlannerTaskRate(data, studentId, mondayOf(todayStr()));
@@ -2221,9 +2224,14 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
         {dayStats.length === 0 ? <EmptyState text="기록이 없습니다." /> : (
           <ul className="flex flex-col gap-2">
             {dayStats.map(d => (
-              <li key={d.date} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
+              <li key={d.date} className="flex items-center justify-between p-2.5 rounded-lg flex-wrap gap-y-1" style={{ background: "#efe6d0" }}>
                 <span className="text-xs" style={{ color: "#7a6f52" }}>{d.date}</span>
-                <span className="text-sm" style={{ color: d.rate < PASS_RATE ? "var(--coral)" : "var(--gold)" }}>{formatMinutes(d.pureMinutes)} · {d.done}/{d.total} · {d.rate}%</span>
+                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                  <span className="text-sm font-semibold" style={{ color: "var(--gold)" }}>{formatMinutes(d.pureMinutes)}</span>
+                  {d.subjects.map(subj => (
+                    <span key={subj} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-white" style={{ background: colorForSubject(subj) }}>{subj}</span>
+                  ))}
+                </div>
               </li>
             ))}
           </ul>
