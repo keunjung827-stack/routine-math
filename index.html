@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-54";
+const APP_VERSION = "2026-09-14-55";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -1071,7 +1072,7 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
   const updateItem = (key, field, value) => setItems(items.map(it => it.key === key ? { ...it, [field]: value } : it));
 
   // 그날 기한인 숙제의 실제 제출 기록 (강사가 참고할 수 있도록 낱개로 보여주기만 함 — 최종 선택은 강사가 직접 클릭)
-  const todaysHomeworks = studentId ? data.homeworks.filter(h => h.studentId === studentId && (h.dueDate || h.date) === date) : [];
+  const todaysHomeworks = studentId ? data.homeworks.filter(h => h.studentId === studentId && (h.dueDate || h.date) < date) : [];
 
   const practiceItem = items.find(it => it.key === "practice");
   const wrongItem = items.find(it => it.key === "wrong");
