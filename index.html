@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-41";
+const APP_VERSION = "2026-09-14-43";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,8 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
 
 
 
@@ -825,7 +827,7 @@ function HomeworkTab({ data, setData, scopeClassGroups }) {
                 <div className="flex items-center justify-between">
                   <div className="text-sm" style={{ color: "#4a4332" }}>
                     <b style={{ color: "#2b2417" }}>{studentName(h.studentId)}</b> · {h.title}
-                    {h.dueDate && <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded-full" style={{ background: isOverdue(h) ? "var(--coral)" : "#e4d8ba", color: isOverdue(h) ? "#fff" : "#5c543e" }}>{isOverdue(h) ? "기한 초과" : `기한 ${h.dueDate}`}</span>}
+                    {h.dueDate && <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded-full" style={{ background: (h.submittedLate || isOverdue(h)) ? "var(--coral)" : "#e4d8ba", color: (h.submittedLate || isOverdue(h)) ? "#fff" : "#5c543e" }}>{h.submittedLate ? `기한 초과 (${h.lateSubmittedAt ? new Date(h.lateSubmittedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""} 제출)` : isOverdue(h) ? "기한 초과" : `기한 ${h.dueDate}`}</span>}
                   </div>
                   <div className="flex items-center gap-2">
                     <button onClick={() => toggle(h)} className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1" style={{ background: h.submitted ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>
@@ -837,6 +839,12 @@ function HomeworkTab({ data, setData, scopeClassGroups }) {
                 {(h.submittedAt || (h.photos && h.photos.length > 0) || h.photo) && (
                   <div className="flex items-center gap-2 flex-wrap">
                     {h.submittedAt && <span className="text-xs flex-shrink-0" style={{ color: "#7a6f52" }}>{formatTime(h.submittedAt)} 제출</span>}
+                    {(() => {
+                      const photoList = h.photos || (h.photo ? [h.photo] : []);
+                      return photoList.length > 0 ? (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: "#e4d8ba", color: "#5c543e" }}>질문 {photoList.length}개</span>
+                      ) : null;
+                    })()}
                     {(h.photos || (h.photo ? [h.photo] : [])).map((src, i) => (
                       <img key={i} src={src} onClick={() => window.open(src, "_blank")} alt="질문 사진" className="rounded-md cursor-pointer flex-shrink-0" style={{ height: 52, width: 52, objectFit: "cover", border: "1px solid #e4d8ba" }} />
                     ))}
@@ -1146,13 +1154,12 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
                       <div className="flex flex-col gap-1">
                         <p className="text-[11px]" style={{ color: "#8a7f5e" }}>참고 — 제출 기록 ({todaysHomeworks.length}건)</p>
                         {todaysHomeworks.map(h => {
-                          const dueRef = h.dueDate || h.date;
-                          const submittedDateStr = h.submittedAt ? h.submittedAt.slice(0, 10) : null;
-                          const isLate = h.submitted && submittedDateStr && submittedDateStr > dueRef;
+                          const isLate = h.submittedLate;
                           const timeStr = h.submittedAt ? new Date(h.submittedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }) : "";
+                          const photoCount = (h.photos || (h.photo ? [h.photo] : [])).length;
                           return (
                             <div key={h.id} className="flex items-center justify-between text-[11px] px-2 py-1 rounded-md" style={{ background: "#fffcf6" }}>
-                              <span style={{ color: "#4a4332" }}>{h.title} ({h.date})</span>
+                              <span style={{ color: "#4a4332" }}>{h.title} ({h.date}){photoCount > 0 && ` · 질문 ${photoCount}개`}</span>
                               <span className="font-semibold" style={{ color: !h.submitted ? "var(--coral)" : (isLate ? "var(--gold)" : "#4c8c5f") }}>
                                 {!h.submitted ? "미제출" : (isLate ? `기한초과 제출 (${timeStr})` : `제출 (${timeStr})`)}
                               </span>
@@ -2108,7 +2115,8 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
   });
   const avgMinutes = dayStats.length ? Math.round(dayStats.reduce((s, d) => s + d.pureMinutes, 0) / dayStats.length) : null;
   const weekOverall = weeklyPlannerTaskRate(data, studentId, mondayOf(todayStr()));
-  const totalPureMinutes = dayStats.reduce((s, d) => s + d.pureMinutes, 0);
+  const thisWeekStart = mondayOf(todayStr());
+  const weekPureMinutes = data.plannerBlocks.filter(b => b.studentId === studentId && b.done && mondayOf(b.date) === thisWeekStart).reduce((s, b) => s + minutesBetween(b.start, b.end), 0);
   const recentTests = tests.slice(-8);
   const avgScore = recentTests.length ? Math.round(recentTests.reduce((s, t) => s + t.score, 0) / recentTests.length) : null;
   const recentRoutines = data.routines.filter(r => r.studentId === studentId).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 7);
@@ -2145,7 +2153,7 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
           <StatCard label="최근 숙제 제출률" value={submittedRate === null ? "-" : `${submittedRate}%`} tone={submittedRate !== null && submittedRate < PASS_RATE ? "var(--coral)" : "var(--gold)"} />
           <StatCard label="최근 평균 순공시간" value={avgMinutes === null ? "-" : formatMinutes(avgMinutes)} />
           <StatCard label="최근 테스트 평균" value={avgScore === null ? "-" : `${avgScore}점`} />
-          <StatCard label="누적 순수 공부시간" value={formatMinutes(totalPureMinutes)} />
+          <StatCard label="이번 주 누적 순공시간" value={formatMinutes(weekPureMinutes)} />
         </div>
       </div>
 
@@ -3116,7 +3124,7 @@ function StudyTimer({ data, setData, studentId }) {
 }
 
 // 하루 학습 타임테이블 (사진 속 다이어리처럼 시간대별 막대로 시각화)
-const SUBJECT_PALETTE = ["#e2822f", "#4c8c5f", "#7a8cc4", "#c65a1f", "#b08a3e", "#5c8a8a", "#a15c8f", "#6b7f4f"];
+const SUBJECT_PALETTE = ["#2f6fb0", "#3ea05a", "#d94f3d", "#9450c4", "#d4a017", "#c14f8a", "#2f9e8f", "#8a5a2f", "#5566d4", "#5c5c5c"];
 function colorForSubject(subject) {
   const s = subject || "";
   let hash = 0;
@@ -3127,16 +3135,16 @@ function colorForSubject(subject) {
 function DayTimeline({ blocks }) {
   if (blocks.length === 0) return <EmptyState text="이 날짜에 기록된 공부 시간이 없습니다." />;
   const toMinutes = (hhmm) => { const [h, m] = (hhmm || "00:00").split(":").map(Number); return h * 60 + m; };
-  const minStart = Math.min(...blocks.map(b => toMinutes(b.start)));
-  const maxEnd = Math.max(...blocks.map(b => toMinutes(b.end)));
-  const rangeStart = Math.max(0, Math.floor(minStart / 60) * 60 - 60);
-  const rangeEnd = Math.min(24 * 60, Math.ceil(maxEnd / 60) * 60 + 60);
-  const totalMinutes = Math.max(60, rangeEnd - rangeStart);
+  // 당일 오전 6시 ~ 다음날 새벽 3시 고정 (21시간)
+  const rangeStart = 6 * 60;
+  const rangeEnd = 27 * 60;
+  const totalMinutes = rangeEnd - rangeStart;
   const rowHeight = 34;
   const totalHeight = (totalMinutes / 60) * rowHeight;
   const hourMarks = [];
   for (let m = rangeStart; m <= rangeEnd; m += 60) hourMarks.push(m);
   const subjects = [...new Set(blocks.map(b => b.subject).filter(Boolean))];
+  const wrapMinutes = (mins) => (mins < rangeStart - 180 ? mins + 24 * 60 : mins); // 자정 넘어가는 시각 보정 (예: 00:30 → 24:30)
 
   return (
     <div className="flex flex-col gap-2">
@@ -3144,29 +3152,27 @@ function DayTimeline({ blocks }) {
         <div className="flex-shrink-0" style={{ width: 30 }}>
           {hourMarks.map(m => (
             <div key={m} style={{ height: rowHeight, color: "#a89d84" }} className="text-[10px] relative">
-              <span style={{ position: "absolute", top: -6 }}>{m / 60}시</span>
+              <span style={{ position: "absolute", top: -6 }}>{m % 24 || 24}시</span>
             </div>
           ))}
         </div>
-        <div className="relative flex-1 rounded-lg" style={{ height: totalHeight, background: "#fffcf6", border: "1px solid #e4d8ba" }}>
+        <div className="relative flex-1 rounded-lg overflow-hidden" style={{
+          height: totalHeight, border: "1px solid #e4d8ba",
+          backgroundColor: "#fffcf6",
+          backgroundImage: "repeating-linear-gradient(to bottom, transparent, transparent 4px, #f7f0dd 4px, #f7f0dd 5px), repeating-linear-gradient(to right, transparent, transparent 4px, #f7f0dd 4px, #f7f0dd 5px)",
+        }}>
           {hourMarks.map((m, i) => (
-            <div key={m} style={{ position: "absolute", top: i * rowHeight, left: 0, right: 0, borderTop: "1px solid #f2ead6" }} />
-          ))}
-          {hourMarks.slice(0, -1).flatMap((m, i) => (
-            [1, 2, 3, 4, 5].map(sub => (
-              <div key={`${m}-${sub}`} style={{ position: "absolute", top: i * rowHeight + (sub * rowHeight) / 6, left: 0, right: 0, borderTop: "1px dotted #f6efdd" }} />
-            ))
+            <div key={m} style={{ position: "absolute", top: i * rowHeight, left: 0, right: 0, borderTop: "1px solid #e4d8ba" }} />
           ))}
           {blocks.map(b => {
             const roundTo10 = (mins) => Math.round(mins / 10) * 10;
-            const s = roundTo10(toMinutes(b.start)), e = Math.max(s + 10, roundTo10(toMinutes(b.end)));
+            const s = roundTo10(wrapMinutes(toMinutes(b.start)));
+            const e = Math.max(s + 10, roundTo10(wrapMinutes(toMinutes(b.end))));
             const top = ((s - rangeStart) / 60) * rowHeight;
-            const height = Math.max(8, ((e - s) / 60) * rowHeight - 2);
+            const height = Math.max(6, ((e - s) / 60) * rowHeight - 2);
             return (
-              <div key={b.id} className="absolute rounded-md px-2 text-[10px] font-semibold flex items-center overflow-hidden whitespace-nowrap"
-                style={{ top: top + 1, height, left: 3, right: 3, background: b.done === false ? "#e4d8ba" : colorForSubject(b.subject), color: b.done === false ? "#7a6f52" : "#fffcf6", opacity: b.done === false ? 0.7 : 1 }}>
-                {b.subject}
-              </div>
+              <div key={b.id} className="absolute rounded-md"
+                style={{ top: top + 1, height, left: 3, right: 3, background: b.done === false ? "#e4d8ba" : colorForSubject(b.subject), opacity: b.done === false ? 0.6 : 1 }} />
             );
           })}
         </div>
@@ -3262,13 +3268,15 @@ function StudentHomeworkTab({ data, setData, studentId }) {
 
   const toggle = (h) => {
     const nextSubmitted = !h.submitted;
-    const updated = { ...h, submitted: nextSubmitted, submittedAt: nextSubmitted ? new Date().toISOString() : null };
+    const now = new Date();
+    const isLate = nextSubmitted && h.dueDate && todayStr() > h.dueDate;
+    const updated = { ...h, submitted: nextSubmitted, submittedAt: nextSubmitted ? now.toISOString() : null, submittedLate: nextSubmitted ? isLate : h.submittedLate, lateSubmittedAt: nextSubmitted && isLate ? now.toISOString() : (nextSubmitted ? null : h.lateSubmittedAt) };
     let alerts = syncHomeworkAlert(updated, data);
     if (nextSubmitted) {
       const student = data.students.find(s => s.id === studentId);
       const timeStr = new Date(updated.submittedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-      const hasPhoto = photosOf(updated).length > 0;
-      const message = `[루틴수학] ${student?.name || ""} 학생이 "${updated.title}" 숙제를 제출했습니다 (${timeStr}). ${hasPhoto ? "질문 사진 있음" : "질문 사진 없음"}`;
+      const photoCount = photosOf(updated).length;
+      const message = `[루틴수학] ${student?.name || ""} 학생이 "${updated.title}" 숙제를 제출했습니다 (${timeStr})${isLate ? " — 기한 초과" : ""}. ${photoCount > 0 ? `질문 사진 ${photoCount}장` : "질문 없음"}`;
       const alert = { id: uid(), studentId, sourceKey: `homework-submit:${updated.id}:${updated.submittedAt}`, kind: "숙제 제출", message, status: "대기", createdAt: new Date().toISOString() };
       alerts = [...alerts, alert];
     }
@@ -3306,7 +3314,7 @@ function StudentHomeworkTab({ data, setData, studentId }) {
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: "#2b2417" }}>
                     {h.date} · {h.title}
-                    {h.dueDate && <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded-full" style={{ background: (!h.submitted && h.dueDate < todayStr()) ? "var(--coral)" : "#e4d8ba", color: (!h.submitted && h.dueDate < todayStr()) ? "#fff" : "#5c543e" }}>{(!h.submitted && h.dueDate < todayStr()) ? "기한 초과" : `기한 ${h.dueDate}`}</span>}
+                    {h.dueDate && <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded-full" style={{ background: (h.submittedLate || (!h.submitted && h.dueDate < todayStr())) ? "var(--coral)" : "#e4d8ba", color: (h.submittedLate || (!h.submitted && h.dueDate < todayStr())) ? "#fff" : "#5c543e" }}>{h.submittedLate ? `기한 초과 (${h.lateSubmittedAt ? new Date(h.lateSubmittedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""} 제출)` : (!h.submitted && h.dueDate < todayStr()) ? "기한 초과" : `기한 ${h.dueDate}`}</span>}
                   </span>
                   <button onClick={() => toggle(h)} className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1" style={{ background: h.submitted ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>
                     {h.submitted ? <Check size={12} /> : <ClipboardCheck size={12} />}{h.submitted ? "제출완료 (취소)" : "제출하기"}
