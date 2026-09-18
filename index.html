@@ -56,7 +56,7 @@ import {
   Home, Users, ClipboardList, BookOpen, CalendarClock, ClipboardCheck,
   Bell, Inbox, ShieldCheck, FileText, LogOut, ChevronLeft, Check, X,
   Plus, Trash2, Pencil, Copy, Loader2, Lock, Calendar, Repeat, FlaskConical,
-  Video, Armchair, GraduationCap, TrendingUp, MessageSquare, Users2, ClipboardSignature
+  Video, Armchair, GraduationCap, TrendingUp, MessageSquare, Users2, ClipboardSignature, Award
 } from "https://esm.sh/lucide-react@0.383.0?deps=react@18.3.1";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "https://esm.sh/recharts@2.12.7?deps=react@18.3.1,react-dom@18.3.1";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-66";
+const APP_VERSION = "2026-09-14-71";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -212,6 +212,11 @@ window.storage = {
 
 
 
+
+
+
+
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const APP_ICON_DATA_URL = "";
 
@@ -222,7 +227,7 @@ const ADMIN_PIN = "2025";
 const GRADES = ["중1", "중2", "중3", "고1", "고2", "고3"];
 const CLASS_TRACKS = ["코어", "피크", "슈프림"];
 const CLASS_GROUPS = ["중1", "중2", "중3", "고1", "고2"].flatMap(g => CLASS_TRACKS.map(t => `${g}-${t}`));
-const DAYS = ["월", "화", "수", "목", "금", "토"];
+const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
 const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 const TEST_TYPES = ["주간테스트", "월말테스트", "누적테스트"];
 const ATT_STATUSES = ["출석", "지각", "결석"];
@@ -258,11 +263,11 @@ function mondayOf(dateStr) {
 }
 function todayDayLabel() {
   const idx = new Date().getDay();
-  return idx === 0 ? null : DAYS[idx - 1];
+  return idx === 0 ? DAYS[6] : DAYS[idx - 1];
 }
 function dayLabelForDateStr(dateStr) {
   const idx = new Date(dateStr + "T00:00:00").getDay();
-  return idx === 0 ? null : DAYS[idx - 1];
+  return idx === 0 ? DAYS[6] : DAYS[idx - 1];
 }
 
 const DEFAULT_RULES = `1. 출결 규정
@@ -866,7 +871,7 @@ function HomeworkTab({ data, setData, scopeClassGroups }) {
                     {h.dueDate && <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded-full" style={{ background: (h.submittedLate || isOverdue(h)) ? "var(--coral)" : "#e4d8ba", color: (h.submittedLate || isOverdue(h)) ? "#fff" : "#5c543e" }}>{h.submittedLate ? `기한 초과 (${h.lateSubmittedAt ? new Date(h.lateSubmittedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""} 제출)` : isOverdue(h) ? "기한 초과" : `기한 ${h.dueDate}`}</span>}
                   </div>
                   <div className="flex items-center gap-2">
-                    <button onClick={() => toggle(h)} className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1" style={{ background: h.submitted ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>
+                    <button onClick={() => toggle(h)} className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1" style={{ background: h.submitted ? (h.submittedLate ? "var(--coral)" : "#4c8c5f") : "var(--coral)", color: "#fff" }}>
                       {h.submitted ? <Check size={12} /> : <X size={12} />}{h.submitted ? "제출완료" : "미제출"}
                     </button>
                     <button onClick={() => remove(h.id)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
@@ -1381,6 +1386,82 @@ function weeklyPlannerTaskRate(data, studentId, weekStart) {
   if (tasks.length === 0) return null;
   const done = tasks.filter(t => t.done).length;
   return Math.round((done / tasks.length) * 100);
+}
+
+// 도장판 스타일: 30칸을 채우면 완성되는 형태 (size: "normal" | "small")
+function StampGrid({ filled, total = 30, size = "normal" }) {
+  const dim = size === "small" ? 16 : 26;
+  const gap = size === "small" ? 3 : 5;
+  return (
+    <div className="grid" style={{ gridTemplateColumns: `repeat(6, ${dim}px)`, gap }}>
+      {Array.from({ length: total }, (_, i) => i + 1).map(n => {
+        const isFilled = n <= filled;
+        return (
+          <div key={n} className="rounded-full flex items-center justify-center flex-shrink-0" style={{
+            width: dim, height: dim,
+            border: isFilled ? "2px solid #b3261e" : "1.5px dashed #ddcda0",
+            background: isFilled ? "rgba(179,38,30,0.08)" : "transparent",
+          }}>
+            {isFilled && <span style={{ color: "#b3261e", fontSize: size === "small" ? 8 : 13, fontWeight: 700 }}>✓</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function studyBadgeProgress(data, studentId) {
+  const totalDays = new Set(data.plannerBlocks.filter(b => b.studentId === studentId && b.done).map(b => b.date)).size;
+  const progress = totalDays === 0 ? 0 : ((totalDays - 1) % 30) + 1;
+  const coupons = Math.floor(totalDays / 30);
+  return { totalDays, progress, coupons };
+}
+
+// ================= ADMIN/강사: 학생 칭찬배지 현황 =================
+function BadgeStatusTab({ data, scopeClassGroups }) {
+  const students = studentsInScope(data.students, scopeClassGroups);
+  const rows = students.map(s => ({ student: s, streak: studyStreak(data, s.id), ...studyBadgeProgress(data, s.id) }))
+    .sort((a, b) => b.progress - a.progress || b.totalDays - a.totalDays);
+
+  return (
+    <div className="rounded-2xl p-4" style={panel}>
+      <h3 className="font-bold mb-3 flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}><Award size={18} color="var(--gold)" />칭찬배지 현황 (30개 = 음료쿠폰)</h3>
+      {rows.length === 0 ? <EmptyState text="등록된 학생이 없습니다." /> : (
+        <ul className="flex flex-col gap-2">
+          {rows.map(r => (
+            <li key={r.student.id} className="p-3 rounded-lg flex flex-col gap-1.5" style={{ background: r.progress === 30 ? "#fde3c8" : "#efe6d0" }}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold" style={{ color: "#2b2417" }}>{r.student.name} <span className="text-xs font-normal" style={{ color: "#7a6f52" }}>({r.student.grade}{r.student.classGroup ? ` · ${r.student.classGroup}` : ""})</span></span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {r.streak >= 2 && <span className="text-xs">🔥{r.streak}</span>}
+                  {r.coupons > 0 && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: "#e4d8ba", color: "#5c543e" }}>쿠폰 {r.coupons}개 지급됨</span>}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <StampGrid filled={r.progress} size="small" />
+                <span className="text-xs font-bold flex-shrink-0" style={{ color: "var(--gold)" }}>{r.progress}/30</span>
+              </div>
+              {r.progress === 30 && <p className="text-xs font-semibold" style={{ color: "var(--coral)" }}>🎉 30개 달성 — 음료쿠폰 지급 대상이에요!</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function studyStreak(data, studentId) {
+  const dateSet = new Set(data.plannerBlocks.filter(b => b.studentId === studentId && b.done).map(b => b.date));
+  if (dateSet.size === 0) return 0;
+  let streak = 0;
+  const d = new Date(todayStr() + "T00:00:00");
+  if (!dateSet.has(todayStr())) d.setDate(d.getDate() - 1); // 오늘 기록이 아직 없어도 스트릭이 바로 끊기지 않게 어제부터 확인
+  while (true) {
+    const ds = d.toISOString().slice(0, 10);
+    if (dateSet.has(ds)) { streak++; d.setDate(d.getDate() - 1); }
+    else break;
+  }
+  return streak;
 }
 
 function reviewStruggleStreak(data, studentId) {
@@ -2247,7 +2328,7 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
                   {h.submitted && h.submittedAt && <div className="text-xs" style={{ color: "#7a6f52" }}>{new Date(h.submittedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 제출</div>}
                   {!h.submitted && h.dueDate && <div className="text-xs" style={{ color: h.dueDate < todayStr() ? "var(--coral)" : "#7a6f52" }}>{h.dueDate < todayStr() ? "기한 초과" : `기한 ${h.dueDate}`}</div>}
                 </div>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: h.submitted ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>{h.submitted ? "제출" : "미제출"}</span>
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0" style={{ background: h.submitted ? (h.submittedLate ? "var(--coral)" : "#4c8c5f") : "var(--coral)", color: "#fff" }}>{h.submitted ? "제출" : "미제출"}</span>
               </li>
             ))}
           </ul>
@@ -2452,13 +2533,13 @@ const COMPONENT_MAP = {
   videos: VideosTab, routine: AdminRoutineTab, alerts: AlertsTab,
   rules: RulesTab, attendance: AttendanceTab, teachers: TeachersTab,
   requests: RequestsTab, dailyRoutine: DailyRoutineTab, weeklyRoutine: WeeklyRoutineTab,
-  eduPhilosophy: EduPhilosophyTab, curriculum: CurriculumTab, today: TodayChecklistTab, classSchedule: ClassScheduleTab, messages: MessagesTab,
+  eduPhilosophy: EduPhilosophyTab, curriculum: CurriculumTab, today: TodayChecklistTab, classSchedule: ClassScheduleTab, messages: MessagesTab, badges: BadgeStatusTab,
 };
 
 const GROUPS = [
   { id: "dashboard", label: "대시보드", icon: Home, accent: "#4c8c5f", tabs: [{ id: "dashboard", label: "요약" }, { id: "today", label: "오늘 할 일" }] },
   { id: "students", label: "학생 관리", icon: Users, accent: "#4c8c5f", tabs: [{ id: "students", label: "학생 명부" }, { id: "routine", label: "루틴체크" }] },
-  { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }] },
+  { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }, { id: "badges", label: "칭찬배지" }] },
   { id: "schedule", label: "일정·자습실", icon: CalendarClock, accent: "#e2822f", tabs: [{ id: "sessions", label: "보강·클리닉" }, { id: "seats", label: "자습실 관리" }] },
   { id: "classroom", label: "강의실", icon: BookOpen, accent: "#c65a1f", tabs: [{ id: "videos", label: "강의 업로드" }, { id: "curriculum", label: "커리큘럼" }, { id: "eduPhilosophy", label: "교육관" }, { id: "classSchedule", label: "반 시간표" }] },
   { id: "comm", label: "소통", icon: Bell, accent: "#c65a1f", tabs: [{ id: "alerts", label: "학부모 알림" }, { id: "requests", label: "요청함" }, { id: "messages", label: "1:1 문의" }] },
@@ -2929,6 +3010,7 @@ const TEACHER_TABS = [
   { id: "homework", label: "숙제", icon: BookOpen },
   { id: "classSchedule", label: "반 시간표", icon: CalendarClock },
   { id: "tests", label: "테스트기록", icon: ClipboardCheck },
+  { id: "badges", label: "칭찬배지", icon: Award },
   { id: "sessions", label: "보강·클리닉", icon: CalendarClock },
   { id: "attendance", label: "출결기록", icon: ClipboardSignature },
   { id: "comments", label: "코멘트", icon: MessageSquare },
@@ -2942,6 +3024,7 @@ function TeacherHome({ data, setData, teacher, onLogout }) {
   const pendingRequests = data.requests.filter(r => r.status === "대기").length;
   const pendingMessages = pendingMessageThreads(data, teacher.classGroups);
   const commBadge = pendingAlerts + pendingRequests + pendingMessages;
+  const upcomingSessionCount = data.sessions.filter(s => studentsInScope(data.students, teacher.classGroups).some(st => st.id === s.studentId) && s.status === "예정" && s.date >= todayStr()).length;
   return (
     <div className="min-h-screen px-5 pb-6" style={{ background: "#f6f1e4", paddingTop: "max(24px, calc(env(safe-area-inset-top) + 16px))" }}>
       <div className="flex items-center justify-between mb-4">
@@ -2955,7 +3038,7 @@ function TeacherHome({ data, setData, teacher, onLogout }) {
       <div className="flex gap-2 mb-4 flex-wrap">
         {TEACHER_TABS.map(t => {
           const Icon = t.icon; const active = tab === t.id;
-          const badge = t.id === "comm" ? commBadge : 0;
+          const badge = t.id === "comm" ? commBadge : (t.id === "sessions" ? upcomingSessionCount : 0);
           return (
             <button key={t.id} onClick={() => setTab(t.id)} className="relative flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl min-w-[70px]"
               style={{ background: active ? "#efe3c8" : "transparent", border: `1px solid ${active ? "var(--gold)" : "#e4d8ba"}` }}>
@@ -2973,6 +3056,7 @@ function TeacherHome({ data, setData, teacher, onLogout }) {
       {tab === "homework" && <HomeworkTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "classSchedule" && <ClassScheduleTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "tests" && <TestsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
+      {tab === "badges" && <BadgeStatusTab data={data} scopeClassGroups={teacher.classGroups} />}
       {tab === "sessions" && <SessionsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "attendance" && <AttendanceTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "comments" && <TeacherCommentsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
@@ -3188,7 +3272,22 @@ function StudyTimer({ data, setData, studentId }) {
     const end = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
     const startDate = new Date(now.getTime() - totalMinutes * 60000);
     const startStr = `${pad(startDate.getHours())}:${pad(startDate.getMinutes())}`;
-    setData({ ...data, plannerBlocks: [...data.plannerBlocks, { id: uid(), studentId, date: todayStr(), start: startStr, end, subject: subject.trim() || "기타", detail: detail.trim(), done: true }] });
+    const newBlocks = [...data.plannerBlocks, { id: uid(), studentId, date: todayStr(), start: startStr, end, subject: subject.trim() || "기타", detail: detail.trim(), done: true }];
+
+    const daysBefore = new Set(data.plannerBlocks.filter(b => b.studentId === studentId && b.done).map(b => b.date)).size;
+    const daysAfter = new Set(newBlocks.filter(b => b.studentId === studentId && b.done).map(b => b.date)).size;
+    let alerts = data.alerts;
+    if (daysAfter > daysBefore && daysAfter % 30 === 0) {
+      const student = data.students.find(s => s.id === studentId);
+      const coupons = daysAfter / 30;
+      alerts = [...alerts, {
+        id: uid(), studentId, sourceKey: `badge30:${studentId}:${coupons}`, kind: "칭찬배지 달성",
+        message: `[루틴수학] ${student?.name || ""} 학생이 순공 칭찬배지 30개를 모았어요! 음료쿠폰을 지급해주세요. (통산 ${coupons}번째)`,
+        status: "대기", createdAt: new Date().toISOString(),
+      }];
+    }
+
+    setData({ ...data, plannerBlocks: newBlocks, alerts });
     reset();
     setSubject("");
     setDetail("");
@@ -3306,8 +3405,25 @@ function StudentPlannerTimetable({ data, setData, studentId }) {
   const toggleDone = (b) => setData({ ...data, plannerBlocks: data.plannerBlocks.map(x => x.id === b.id ? { ...x, done: !x.done } : x) });
   const remove = (id) => setData({ ...data, plannerBlocks: data.plannerBlocks.filter(b => b.id !== id) });
 
+  const streak = studyStreak(data, studentId);
+  const badgeInfo = studyBadgeProgress(data, studentId);
+
   return (
     <div className="flex flex-col gap-4">
+      {streak >= 2 && (
+        <div className="rounded-xl p-3 flex items-center gap-2" style={{ background: "#fff3d6", border: "1px solid #f0d99a" }}>
+          <span style={{ fontSize: 20 }}>🔥</span>
+          <span className="text-sm font-bold" style={{ color: "#8a5a17" }}>{streak}일 연속 순공 기록 중이에요!</span>
+        </div>
+      )}
+      {badgeInfo.totalDays > 0 && (
+        <div className="rounded-xl p-3 flex flex-col gap-2" style={{ background: badgeInfo.progress === 30 ? "#fde3c8" : "#fffcf6", border: "1px solid #e4d8ba" }}>
+          <span className="text-sm font-bold" style={{ color: "#8a5a17" }}>
+            {badgeInfo.progress === 30 ? "🎉 칭찬배지 30개 다 모았어요! 선생님께 음료쿠폰 받으세요!" : `칭찬배지 도장판 ${badgeInfo.progress}/30`}
+          </span>
+          <StampGrid filled={badgeInfo.progress} />
+        </div>
+      )}
       <PlannerTaskList data={data} setData={setData} studentId={studentId} date={date} />
       <StudyTimer data={data} setData={setData} studentId={studentId} />
 
@@ -3369,6 +3485,7 @@ function StudentHomeworkTab({ data, setData, studentId }) {
   const mine = data.homeworks.filter(h => h.studentId === studentId).sort((a, b) => b.date.localeCompare(a.date));
   const [openPhotoFor, setOpenPhotoFor] = useState(null);
   const [uploadingId, setUploadingId] = useState(null);
+  const hasTodayStudy = data.plannerBlocks.some(b => b.studentId === studentId && b.date === todayStr() && b.done);
 
   const photosOf = (h) => h.photos || (h.photo ? [h.photo] : []);
 
@@ -3411,6 +3528,11 @@ function StudentHomeworkTab({ data, setData, studentId }) {
   return (
     <div className="rounded-2xl p-4" style={panel}>
       <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>숙제 제출</h3>
+      {!hasTodayStudy && (
+        <div className="rounded-lg p-2.5 mb-3" style={{ background: "#fffcf6", border: "1px dashed #e4d8ba" }}>
+          <p className="text-xs" style={{ color: "#8a7f5e" }}>💡 오늘 순공 타이머 기록이 아직 없어요 — 플래너에서 한번 써보세요!</p>
+        </div>
+      )}
       {mine.length === 0 ? <EmptyState text="등록된 숙제가 없습니다." /> : (
         <ul className="flex flex-col gap-3">
           {mine.map(h => {
@@ -3422,7 +3544,7 @@ function StudentHomeworkTab({ data, setData, studentId }) {
                     {h.date} · {h.title}
                     {h.dueDate && <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded-full" style={{ background: (h.submittedLate || (!h.submitted && h.dueDate < todayStr())) ? "var(--coral)" : "#e4d8ba", color: (h.submittedLate || (!h.submitted && h.dueDate < todayStr())) ? "#fff" : "#5c543e" }}>{h.submittedLate ? `기한 초과 (${h.lateSubmittedAt ? new Date(h.lateSubmittedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""} 제출)` : (!h.submitted && h.dueDate < todayStr()) ? "기한 초과" : `기한 ${h.dueDate}`}</span>}
                   </span>
-                  <button onClick={() => toggle(h)} className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1" style={{ background: h.submitted ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>
+                  <button onClick={() => toggle(h)} className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1" style={{ background: h.submitted ? (h.submittedLate ? "var(--coral)" : "#4c8c5f") : "var(--coral)", color: "#fff" }}>
                     {h.submitted ? <Check size={12} /> : <ClipboardCheck size={12} />}{h.submitted ? "제출완료 (취소)" : "제출하기"}
                   </button>
                 </div>
@@ -3614,6 +3736,7 @@ function StudentHome({ data, setData, studentId, onLogout }) {
   const student = data.students.find(s => s.id === studentId);
   const seenVideoIds = new Set(student?.seenVideoIds || []);
   const newVideoCount = data.videos.filter(v => (v.target === "ALL" || v.target === student?.grade) && !seenVideoIds.has(v.id)).length;
+  const upcomingSessionCount = data.sessions.filter(s => s.studentId === studentId && s.status === "예정" && s.date >= todayStr()).length;
   return (
     <div className="min-h-screen px-5 pb-6" style={{ background: "#f6f1e4", paddingTop: "max(24px, calc(env(safe-area-inset-top) + 16px))" }}>
       <div className="flex items-center justify-between mb-4">
@@ -3626,7 +3749,7 @@ function StudentHome({ data, setData, studentId, onLogout }) {
       <div className="flex gap-2 mb-4 flex-wrap">
         {STUDENT_TABS.map(t => {
           const Icon = t.icon; const active = tab === t.id;
-          const badge = t.id === "classroom" ? newVideoCount : 0;
+          const badge = t.id === "classroom" ? newVideoCount : (t.id === "sessions" ? upcomingSessionCount : 0);
           return (
             <button key={t.id} onClick={() => setTab(t.id)} className="relative flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl min-w-[60px]"
               style={{ background: active ? "#efe3c8" : "transparent", border: `1px solid ${active ? "var(--gold)" : "#e4d8ba"}` }}>
