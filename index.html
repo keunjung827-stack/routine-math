@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-55";
+const APP_VERSION = "2026-09-14-56";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -1099,7 +1100,10 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
       const timeStr = h.submittedAt ? new Date(h.submittedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
       return `${h.title} ${timeStr}${h.submittedLate ? " (기한초과)" : ""}${photoCount > 0 ? ` · 질문 ${photoCount}개` : ""}`;
     }).join(", ");
-    const itemsToSave = items.map(it => it.key === "homework" ? { ...it, note: hwSummary } : it);
+    const hwAutoStatus = todaysHomeworks.length === 0 ? null :
+      todaysHomeworks.some(h => !h.submitted) ? "미제출" :
+      todaysHomeworks.some(h => h.submittedLate) ? "기한초과" : "완료";
+    const itemsToSave = items.map(it => it.key === "homework" ? { ...it, result: hwAutoStatus, note: hwSummary } : it);
     const rates = itemsToSave.map(rateOf).filter(r => r !== null);
     const score = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : 0;
     const routineId = editingId || uid();
@@ -1167,6 +1171,42 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
                 </div>
               );
             }
+            if (it.key === "homework") {
+              const hwAutoStatus = todaysHomeworks.length === 0 ? null :
+                todaysHomeworks.some(h => !h.submitted) ? "미제출" :
+                todaysHomeworks.some(h => h.submittedLate) ? "기한초과" : "완료";
+              return (
+                <div key={it.key} className="flex flex-col gap-1.5 p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm" style={{ color: "#2b2417" }}>{it.label}</span>
+                    <span className="px-2.5 py-1.5 rounded-full text-[11px] font-bold" style={{
+                      background: hwAutoStatus === "완료" ? "#4c8c5f" : hwAutoStatus === "기한초과" ? "var(--gold)" : hwAutoStatus === "미제출" ? "var(--coral)" : "#e4d8ba",
+                      color: hwAutoStatus ? "#fff" : "#5c543e",
+                    }}>{hwAutoStatus || "해당없음"}</span>
+                  </div>
+                  {todaysHomeworks.length === 0 ? (
+                    <p className="text-[11px]" style={{ color: "#8a7f5e" }}>참고 — 이 날짜 기한인 숙제가 없어요</p>
+                  ) : (
+                    <div className="flex flex-col gap-1">
+                      <p className="text-[11px]" style={{ color: "#8a7f5e" }}>자동 계산 근거 ({todaysHomeworks.length}건)</p>
+                      {todaysHomeworks.map(h => {
+                        const isLate = h.submittedLate;
+                        const timeStr = h.submittedAt ? new Date(h.submittedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }) : "";
+                        const photoCount = (h.photos || (h.photo ? [h.photo] : [])).length;
+                        return (
+                          <div key={h.id} className="flex items-center justify-between text-[11px] px-2 py-1 rounded-md" style={{ background: "#fffcf6" }}>
+                            <span style={{ color: "#4a4332" }}>{h.title} ({h.date}){photoCount > 0 && ` · 질문 ${photoCount}개`}</span>
+                            <span className="font-semibold" style={{ color: !h.submitted ? "var(--coral)" : (isLate ? "var(--gold)" : "#4c8c5f") }}>
+                              {!h.submitted ? "미제출" : (isLate ? `기한초과 제출 (${timeStr})` : `제출 (${timeStr})`)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
             if (it.kind === "choice") {
               return (
                 <div key={it.key} className="flex flex-col gap-1.5 p-2 rounded-lg" style={{ background: "#efe6d0" }}>
@@ -1179,30 +1219,7 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
                       ))}
                     </div>
                   </div>
-                  {it.key === "homework" ? (
-                    todaysHomeworks.length === 0 ? (
-                      <p className="text-[11px]" style={{ color: "#8a7f5e" }}>참고 — 이 날짜 기한인 숙제가 없어요</p>
-                    ) : (
-                      <div className="flex flex-col gap-1">
-                        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>참고 — 제출 기록 ({todaysHomeworks.length}건)</p>
-                        {todaysHomeworks.map(h => {
-                          const isLate = h.submittedLate;
-                          const timeStr = h.submittedAt ? new Date(h.submittedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }) : "";
-                          const photoCount = (h.photos || (h.photo ? [h.photo] : [])).length;
-                          return (
-                            <div key={h.id} className="flex items-center justify-between text-[11px] px-2 py-1 rounded-md" style={{ background: "#fffcf6" }}>
-                              <span style={{ color: "#4a4332" }}>{h.title} ({h.date}){photoCount > 0 && ` · 질문 ${photoCount}개`}</span>
-                              <span className="font-semibold" style={{ color: !h.submitted ? "var(--coral)" : (isLate ? "var(--gold)" : "#4c8c5f") }}>
-                                {!h.submitted ? "미제출" : (isLate ? `기한초과 제출 (${timeStr})` : `제출 (${timeStr})`)}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )
-                  ) : (
-                    <input className={inputCls} style={{ ...inputStyle, padding: "6px 10px" }} placeholder="공부한 단원 (예: 이차함수의 최대·최소)" value={it.note || ""} onChange={e => updateItem(it.key, "note", e.target.value)} />
-                  )}
+                  <input className={inputCls} style={{ ...inputStyle, padding: "6px 10px" }} placeholder="공부한 단원 (예: 이차함수의 최대·최소)" value={it.note || ""} onChange={e => updateItem(it.key, "note", e.target.value)} />
                 </div>
               );
             }
