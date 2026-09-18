@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-56";
+const APP_VERSION = "2026-09-14-57";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -1175,14 +1176,16 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
               const hwAutoStatus = todaysHomeworks.length === 0 ? null :
                 todaysHomeworks.some(h => !h.submitted) ? "미제출" :
                 todaysHomeworks.some(h => h.submittedLate) ? "기한초과" : "완료";
+              const lateHw = hwAutoStatus === "기한초과" ? [...todaysHomeworks].filter(h => h.submittedLate).sort((a, b) => (b.lateSubmittedAt || "").localeCompare(a.lateSubmittedAt || ""))[0] : null;
+              const lateTimeStr = lateHw?.lateSubmittedAt ? new Date(lateHw.lateSubmittedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
               return (
                 <div key={it.key} className="flex flex-col gap-1.5 p-2 rounded-lg" style={{ background: "#efe6d0" }}>
                   <div className="flex items-center justify-between">
                     <span className="text-sm" style={{ color: "#2b2417" }}>{it.label}</span>
-                    <span className="px-2.5 py-1.5 rounded-full text-[11px] font-bold" style={{
+                    <span className="px-2.5 py-1.5 rounded-full text-[11px] font-bold text-center" style={{
                       background: hwAutoStatus === "완료" ? "#4c8c5f" : hwAutoStatus === "기한초과" ? "var(--gold)" : hwAutoStatus === "미제출" ? "var(--coral)" : "#e4d8ba",
                       color: hwAutoStatus ? "#fff" : "#5c543e",
-                    }}>{hwAutoStatus || "해당없음"}</span>
+                    }}>{hwAutoStatus || "해당없음"}{lateTimeStr && ` (${lateTimeStr})`}</span>
                   </div>
                   {todaysHomeworks.length === 0 ? (
                     <p className="text-[11px]" style={{ color: "#8a7f5e" }}>참고 — 이 날짜 기한인 숙제가 없어요</p>
