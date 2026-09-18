@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-46";
+const APP_VERSION = "2026-09-14-47";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -192,6 +192,7 @@ window.storage = {
 
 
 
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const APP_ICON_DATA_URL = "";
 
@@ -207,7 +208,7 @@ const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 const TEST_TYPES = ["주간테스트", "월말테스트", "누적테스트"];
 const ATT_STATUSES = ["출석", "지각", "결석"];
 const ROUTINE_ITEM_DEFS = [
-  { key: "class", label: "진도수업", kind: "choice", options: [{ value: "N", label: "새로 배움" }, { value: "R", label: "복습 중" }], unit: "" },
+  { key: "class", label: "진도수업", kind: "choice", options: [{ value: "N", label: "새로 배움" }, { value: "R", label: "복습 중" }, { value: "D", label: "다시 진행 (재학습)" }], unit: "" },
   { key: "review", label: "개념복습", kind: "choice", options: [{ value: "P", label: "진행중" }, { value: "C", label: "완료" }], unit: "" },
   { key: "practice", label: "문제풀이", kind: "count", unit: "문제" },
   { key: "wrong", label: "오답", kind: "count", unit: "문제" },
@@ -1127,7 +1128,7 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
           <Field label="날짜"><input type="date" className={inputCls} style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
         </div>
         <div className="flex flex-col gap-2">
-          <p className="text-[11px]" style={{ color: "#8a7f5e" }}>진도수업: N=새로 배움 · R=복습 중 &nbsp;|&nbsp; 개념복습: P=진행중 · C=완료 &nbsp;|&nbsp; 숙제: 완료=기한 내 · 기한초과 · 미제출</p>
+          <p className="text-[11px]" style={{ color: "#8a7f5e" }}>진도수업: N=새로 배움 · R=복습 중 · D=다시 진행(재학습) &nbsp;|&nbsp; 개념복습: P=진행중 · C=완료 &nbsp;|&nbsp; 숙제: 완료=기한 내 · 기한초과 · 미제출</p>
           {items.map(it => {
             if (it.kind === "count") {
               return (
@@ -1292,19 +1293,17 @@ function buildDailyReportText(student, date, items, testName, testScore, comment
   return lines.join("\n");
 }
 
-function buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown, classBreakdown) {
+function buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown) {
   const lines = [];
   lines.push("📊 주간 ROUTINE");
   lines.push(`${student?.name || ""} / ${student?.grade || ""}`);
   lines.push("");
   lines.push(`이번 주 실제 달성률 ${overall === null ? "-" : `${overall}%`}`);
   lines.push("");
-  if (classBreakdown && (classBreakdown.N + classBreakdown.R) > 0) {
-    lines.push(`진도수업 새로 배움 ${classBreakdown.N}일 · 복습 중 ${classBreakdown.R}일`);
-  }
   if (reviewBreakdown && (reviewBreakdown.P + reviewBreakdown.C) > 0) {
-    const reviewRate = Math.round((reviewBreakdown.C / (reviewBreakdown.P + reviewBreakdown.C)) * 100);
-    lines.push(`개념복습 진행중 ${reviewBreakdown.P}일 · 완료율 ${reviewRate}%`);
+    const reviewRate = Math.min(100, Math.round((reviewBreakdown.C / 3) * 100));
+    lines.push(`개념복습 (목표 3회) 완료 ${reviewBreakdown.C}회 · 완료율 ${reviewRate}%`);
+    if (reviewBreakdown.P >= 3) lines.push(`⚠️ 진행중 ${reviewBreakdown.P}회 — 진도수업 재학습 권장`);
   }
   itemAverages.forEach(it => {
     lines.push(`${it.label} ${it.avg === null ? "기록없음" : `${it.avg}%`}`);
@@ -1374,11 +1373,11 @@ function weeklyRoutineStats(data, studentId, weekStart) {
 
 function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButton, bare, hideTitle }) {
   const student = data.students.find(s => s.id === studentId);
-  const { weekRoutines, itemAverages, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown, classBreakdown } = weeklyRoutineStats(data, studentId, weekStart);
+  const { weekRoutines, itemAverages, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown } = weeklyRoutineStats(data, studentId, weekStart);
   const overall = weeklyPlannerTaskRate(data, studentId, weekStart);
 
   const sendReport = () => {
-    const message = buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown, classBreakdown);
+    const message = buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown);
     const alert = { id: uid(), studentId, sourceKey: `weekly:${studentId}:${weekStart}`, kind: "주간 루틴", message, status: "대기", createdAt: new Date().toISOString() };
     setData({ ...data, alerts: [...data.alerts, alert] });
   };
@@ -1394,16 +1393,15 @@ function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButt
       )}
       {weekRoutines.length === 0 ? <EmptyState text="이번 주 등록된 오늘의 루틴 기록이 없습니다." /> : (
         <ul className="flex flex-col gap-1.5">
-          {(classBreakdown.N + classBreakdown.R) > 0 && (
-            <li className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
-              <span className="text-sm" style={{ color: "#2b2417" }}>진도수업</span>
-              <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>새로 배움 {classBreakdown.N}일 · 복습 중 {classBreakdown.R}일</span>
-            </li>
-          )}
           {(reviewBreakdown.P + reviewBreakdown.C) > 0 && (
-            <li className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
-              <span className="text-sm" style={{ color: "#2b2417" }}>개념복습</span>
-              <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>진행중 {reviewBreakdown.P}일 · 완료율 {Math.round((reviewBreakdown.C / (reviewBreakdown.P + reviewBreakdown.C)) * 100)}%</span>
+            <li className="flex flex-col gap-1 p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm" style={{ color: "#2b2417" }}>개념복습 (목표 3회)</span>
+                <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>완료 {reviewBreakdown.C}회 · 완료율 {Math.min(100, Math.round((reviewBreakdown.C / 3) * 100))}%</span>
+              </div>
+              {reviewBreakdown.P >= 3 && (
+                <p className="text-xs font-semibold" style={{ color: "var(--coral)" }}>⚠️ 진행중 {reviewBreakdown.P}회 — 학생이 어려워하고 있어요. 진도수업 재학습을 권장해요.</p>
+              )}
             </li>
           )}
           {itemAverages.map(it => (
