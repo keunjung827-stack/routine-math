@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-63";
+const APP_VERSION = "2026-09-14-64";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -1104,9 +1105,9 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
     const hwSummary = todaysHomeworks.map(h => {
       const photoCount = (h.photos || (h.photo ? [h.photo] : [])).length;
       const dueRef = h.dueDate || h.date;
-      if (!h.submitted) return `- ${h.title} (${dueRef} 기한) : 미제출`;
+      if (!h.submitted) return `• ${h.title} (${dueRef} 기한) : 미제출`;
       const timeStr = h.submittedAt ? new Date(h.submittedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
-      return `- ${h.title} (${dueRef} 기한) : ${h.submittedLate ? "기한초과 제출" : "제출"} ${timeStr}${photoCount > 0 ? ` · 질문 ${photoCount}개` : ""}`;
+      return `• ${h.title} (${dueRef} 기한) : ${h.submittedLate ? "기한초과 제출" : "제출"} ${timeStr}${photoCount > 0 ? ` · 질문 ${photoCount}개` : ""}`;
     }).join("\n");
     const hwAutoStatus = todaysHomeworks.length === 0 ? null :
       todaysHomeworks.some(h => !h.submitted) ? "미제출" :
