@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-47";
+const APP_VERSION = "2026-09-14-48";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -1293,7 +1294,7 @@ function buildDailyReportText(student, date, items, testName, testScore, comment
   return lines.join("\n");
 }
 
-function buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown) {
+function buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown, struggleStreak) {
   const lines = [];
   lines.push("📊 주간 ROUTINE");
   lines.push(`${student?.name || ""} / ${student?.grade || ""}`);
@@ -1303,7 +1304,7 @@ function buildWeeklyReportText(student, weekStart, itemAverages, overall, testAv
   if (reviewBreakdown && (reviewBreakdown.P + reviewBreakdown.C) > 0) {
     const reviewRate = Math.min(100, Math.round((reviewBreakdown.C / 3) * 100));
     lines.push(`개념복습 (목표 3회) 완료 ${reviewBreakdown.C}회 · 완료율 ${reviewRate}%`);
-    if (reviewBreakdown.P >= 3) lines.push(`⚠️ 진행중 ${reviewBreakdown.P}회 — 진도수업 재학습 권장`);
+    if (struggleStreak >= 3) lines.push(`⚠️ 완료 후 ${struggleStreak}회 연속 진행중 — 진도수업 재학습 권장`);
   }
   itemAverages.forEach(it => {
     lines.push(`${it.label} ${it.avg === null ? "기록없음" : `${it.avg}%`}`);
@@ -1319,6 +1320,20 @@ function weeklyPlannerTaskRate(data, studentId, weekStart) {
   if (tasks.length === 0) return null;
   const done = tasks.filter(t => t.done).length;
   return Math.round((done / tasks.length) * 100);
+}
+
+function reviewStruggleStreak(data, studentId) {
+  const records = data.routines
+    .filter(r => r.studentId === studentId)
+    .map(r => ({ date: r.date, review: (r.items || []).find(it => it.key === "review")?.result }))
+    .filter(r => r.review === "P" || r.review === "C")
+    .sort((a, b) => b.date.localeCompare(a.date)); // 최신순
+  let streak = 0;
+  for (const r of records) {
+    if (r.review === "P") streak++;
+    else break; // 완료(C)를 만나면 멈춤
+  }
+  return streak;
 }
 
 function weeklyRoutineStats(data, studentId, weekStart) {
@@ -1375,9 +1390,10 @@ function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButt
   const student = data.students.find(s => s.id === studentId);
   const { weekRoutines, itemAverages, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown } = weeklyRoutineStats(data, studentId, weekStart);
   const overall = weeklyPlannerTaskRate(data, studentId, weekStart);
+  const struggleStreak = reviewStruggleStreak(data, studentId);
 
   const sendReport = () => {
-    const message = buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown);
+    const message = buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown, struggleStreak);
     const alert = { id: uid(), studentId, sourceKey: `weekly:${studentId}:${weekStart}`, kind: "주간 루틴", message, status: "대기", createdAt: new Date().toISOString() };
     setData({ ...data, alerts: [...data.alerts, alert] });
   };
@@ -1399,8 +1415,8 @@ function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButt
                 <span className="text-sm" style={{ color: "#2b2417" }}>개념복습 (목표 3회)</span>
                 <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>완료 {reviewBreakdown.C}회 · 완료율 {Math.min(100, Math.round((reviewBreakdown.C / 3) * 100))}%</span>
               </div>
-              {reviewBreakdown.P >= 3 && (
-                <p className="text-xs font-semibold" style={{ color: "var(--coral)" }}>⚠️ 진행중 {reviewBreakdown.P}회 — 학생이 어려워하고 있어요. 진도수업 재학습을 권장해요.</p>
+              {struggleStreak >= 3 && (
+                <p className="text-xs font-semibold" style={{ color: "var(--coral)" }}>⚠️ 완료 후 {struggleStreak}회 연속 진행중 — 학생이 어려워하고 있어요. 진도수업 재학습을 권장해요.</p>
               )}
             </li>
           )}
