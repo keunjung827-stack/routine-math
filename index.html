@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-48";
+const APP_VERSION = "2026-09-14-49";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -1072,7 +1073,13 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
   const save = () => {
     if (!studentId) return;
     const student = data.students.find(s => s.id === studentId);
-    const itemsToSave = items;
+    const hwSummary = todaysHomeworks.map(h => {
+      const photoCount = (h.photos || (h.photo ? [h.photo] : [])).length;
+      if (!h.submitted) return `${h.title} 미제출`;
+      const timeStr = h.submittedAt ? new Date(h.submittedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+      return `${h.title} ${timeStr}${h.submittedLate ? " (기한초과)" : ""}${photoCount > 0 ? ` · 질문 ${photoCount}개` : ""}`;
+    }).join(", ");
+    const itemsToSave = items.map(it => it.key === "homework" ? { ...it, note: hwSummary } : it);
     const rates = itemsToSave.map(rateOf).filter(r => r !== null);
     const score = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : 0;
     const routineId = editingId || uid();
@@ -2253,7 +2260,7 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
                   </div>
                 )}
                 {dpc > 0 && <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>문제풀이</b> · {dpc}문제 · 오답 {dwc} · 정답률 {dacc}%</div>}
-                {hwItem && <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>숙제</b> · {hwItem.result || "선택 안 함"}</div>}
+                {hwItem && <div className="text-sm" style={{ color: "#4a4332" }}><b style={{ color: "#2b2417" }}>숙제</b> · {hwItem.result || "선택 안 함"}{hwItem.note && <span style={{ color: "#7a6f52" }}> — {hwItem.note}</span>}</div>}
                 {dayRoutine.testName && (() => {
                   const linkedTest = data.tests.find(t => t.id === `routine-${dayRoutine.id}`);
                   return (
