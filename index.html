@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-74";
+const APP_VERSION = "2026-09-14-76";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,8 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
 
 
 
@@ -3429,9 +3431,16 @@ function StudentPlannerTimetable({ data, setData, studentId }) {
       )}
       {badgeInfo.totalDays > 0 && (
         <div className="rounded-xl p-3 flex flex-col gap-2" style={{ background: badgeInfo.progress === 30 ? "#fde3c8" : "#fffcf6", border: "1px solid #e4d8ba" }}>
-          <span className="text-sm font-bold" style={{ color: "#8a5a17" }}>
-            {badgeInfo.progress === 30 ? "🎉 칭찬배지 30개 다 모았어요! 선생님께 음료쿠폰 받으세요!" : `칭찬배지 도장판 ${badgeInfo.progress}/30`}
-          </span>
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm font-bold" style={{ color: "#8a5a17" }}>
+              {badgeInfo.progress === 30 ? "🎉 칭찬배지 30개 다 모았어요! 선생님께 음료쿠폰 받으세요!" : `칭찬배지 도장판 ${badgeInfo.progress}/30`}
+            </span>
+            {badgeInfo.progress < 30 && (
+              <span className="inline-block self-start mt-1 text-xs font-bold px-2 py-1 rounded-full" style={{ background: "var(--coral)", color: "#fff" }}>
+                🎁 불꽃 30개를 완성해서 음료쿠폰을 받으세요!
+              </span>
+            )}
+          </div>
           <StampGrid filled={badgeInfo.progress} icon="🔥" />
         </div>
       )}
