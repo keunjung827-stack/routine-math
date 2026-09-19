@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-72";
+const APP_VERSION = "2026-09-14-74";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -218,10 +218,12 @@ window.storage = {
 
 
 
+
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const APP_ICON_DATA_URL = "";
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const STORAGE_KEY = "routine_math_unified_v2";
 const PASS_RATE = 70;
 const ADMIN_PIN = "2025";
@@ -255,12 +257,22 @@ function pendingMessageThreads(data, scopeClassGroups) {
   }).length;
 }
 
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function addDaysToDateStr(dateStr, delta) {
+  const [y, m, day] = dateStr.split("-").map(Number);
+  const d = new Date(y, m - 1, day);
+  d.setDate(d.getDate() + delta);
+  return localDateStr(d);
+}
+
 function mondayOf(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return localDateStr(d);
 }
 function todayDayLabel() {
   const idx = new Date().getDay();
@@ -1455,12 +1467,10 @@ function studyStreak(data, studentId) {
   const dateSet = new Set(data.plannerBlocks.filter(b => b.studentId === studentId && b.done).map(b => b.date));
   if (dateSet.size === 0) return 0;
   let streak = 0;
-  const d = new Date(todayStr() + "T00:00:00");
-  if (!dateSet.has(todayStr())) d.setDate(d.getDate() - 1); // 오늘 기록이 아직 없어도 스트릭이 바로 끊기지 않게 어제부터 확인
-  while (true) {
-    const ds = d.toISOString().slice(0, 10);
-    if (dateSet.has(ds)) { streak++; d.setDate(d.getDate() - 1); }
-    else break;
+  let cursor = dateSet.has(todayStr()) ? todayStr() : addDaysToDateStr(todayStr(), -1); // 오늘 기록이 아직 없어도 스트릭이 바로 끊기지 않게 어제부터 확인
+  while (dateSet.has(cursor)) {
+    streak++;
+    cursor = addDaysToDateStr(cursor, -1);
   }
   return streak;
 }
@@ -1600,7 +1610,7 @@ function WeeklyRoutineTab({ data, setData, scopeClassGroups }) {
   const shiftWeek = (days) => {
     const d = new Date(weekStart + "T00:00:00");
     d.setDate(d.getDate() + days);
-    setWeekStart(d.toISOString().slice(0, 10));
+    setWeekStart(localDateStr(d));
   };
   return (
     <div className="flex flex-col gap-4">
@@ -2123,7 +2133,7 @@ function dateForDayInWeek(weekStart, day) {
   if (idx < 0) return weekStart;
   const d = new Date(weekStart + "T00:00:00");
   d.setDate(d.getDate() + idx);
-  return d.toISOString().slice(0, 10);
+  return localDateStr(d);
 }
 
 function minutesBetween(start, end) {
@@ -3530,8 +3540,8 @@ function StudentHomeworkTab({ data, setData, studentId }) {
     <div className="rounded-2xl p-4" style={panel}>
       <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>숙제 제출</h3>
       {!hasTodayStudy && (
-        <div className="rounded-lg p-2.5 mb-3" style={{ background: "#fffcf6", border: "1px dashed #e4d8ba" }}>
-          <p className="text-xs" style={{ color: "#8a7f5e" }}>💡 오늘 순공 타이머 기록이 아직 없어요 — 플래너에서 한번 써보세요!</p>
+        <div className="rounded-lg p-2.5 mb-3" style={{ background: "#fff3d6", border: "1px solid #f0d99a" }}>
+          <p className="text-sm font-bold" style={{ color: "#8a5a17" }}>💡 오늘 순공 타이머 기록이 아직 없어요 — 플래너에서 한번 써보세요!</p>
         </div>
       )}
       {mine.length === 0 ? <EmptyState text="등록된 숙제가 없습니다." /> : (
