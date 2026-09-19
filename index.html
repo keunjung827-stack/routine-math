@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-71";
+const APP_VERSION = "2026-09-14-72";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -1389,7 +1390,7 @@ function weeklyPlannerTaskRate(data, studentId, weekStart) {
 }
 
 // 도장판 스타일: 30칸을 채우면 완성되는 형태 (size: "normal" | "small")
-function StampGrid({ filled, total = 30, size = "normal" }) {
+function StampGrid({ filled, total = 30, size = "normal", icon = "✓" }) {
   const dim = size === "small" ? 16 : 26;
   const gap = size === "small" ? 3 : 5;
   return (
@@ -1402,7 +1403,7 @@ function StampGrid({ filled, total = 30, size = "normal" }) {
             border: isFilled ? "2px solid #b3261e" : "1.5px dashed #ddcda0",
             background: isFilled ? "rgba(179,38,30,0.08)" : "transparent",
           }}>
-            {isFilled && <span style={{ color: "#b3261e", fontSize: size === "small" ? 8 : 13, fontWeight: 700 }}>✓</span>}
+            {isFilled && (icon === "🔥" ? <span style={{ fontSize: size === "small" ? 10 : 15 }}>🔥</span> : <span style={{ color: "#b3261e", fontSize: size === "small" ? 8 : 13, fontWeight: 700 }}>✓</span>)}
           </div>
         );
       })}
@@ -3421,7 +3422,7 @@ function StudentPlannerTimetable({ data, setData, studentId }) {
           <span className="text-sm font-bold" style={{ color: "#8a5a17" }}>
             {badgeInfo.progress === 30 ? "🎉 칭찬배지 30개 다 모았어요! 선생님께 음료쿠폰 받으세요!" : `칭찬배지 도장판 ${badgeInfo.progress}/30`}
           </span>
-          <StampGrid filled={badgeInfo.progress} />
+          <StampGrid filled={badgeInfo.progress} icon="🔥" />
         </div>
       )}
       <PlannerTaskList data={data} setData={setData} studentId={studentId} date={date} />
