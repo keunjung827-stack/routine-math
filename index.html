@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-76";
+const APP_VERSION = "2026-09-14-79";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,9 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
+
 
 
 
@@ -1236,7 +1239,7 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
                                 <span style={{ color: "#8a7f5e" }}>{submittedDateStr} 순공시간</span>
                                 <span className="font-bold" style={{ color: "var(--gold)" }}>{formatMinutes(studyTotal)}</span>
                                 {Object.entries(studyBySubj).map(([subj, min]) => (
-                                  <span key={subj} className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full text-white" style={{ background: colorForSubject(subj) }}>{subj} {formatMinutes(min)}</span>
+                                  <span key={subj} className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full text-white" style={{ background: colorForSubject(subj, studentSubjectList(data, studentId)) }}>{subj} {formatMinutes(min)}</span>
                                 ))}
                               </div>
                             )}
@@ -2359,7 +2362,7 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
                 <div className="flex items-center gap-1.5 flex-wrap justify-end">
                   <span className="text-sm font-semibold" style={{ color: "var(--gold)" }}>{formatMinutes(d.pureMinutes)}</span>
                   {d.subjectMinutes.map(sm => (
-                    <span key={sm.subject} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-white" style={{ background: colorForSubject(sm.subject) }}>{sm.subject} {formatMinutes(sm.minutes)}</span>
+                    <span key={sm.subject} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-white" style={{ background: colorForSubject(sm.subject, studentSubjectList(data, studentId)) }}>{sm.subject} {formatMinutes(sm.minutes)}</span>
                   ))}
                 </div>
               </li>
@@ -2381,7 +2384,7 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
           </div>
         </div>
         <PlannerTaskList data={data} setData={setData} studentId={studentId} date={plannerViewDate} readOnly />
-        <DayTimeline blocks={data.plannerBlocks.filter(b => b.studentId === studentId && b.date === plannerViewDate)} />
+        <DayTimeline blocks={data.plannerBlocks.filter(b => b.studentId === studentId && b.date === plannerViewDate)} subjectList={studentSubjectList(data, studentId)} />
       </div>
 
       <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
@@ -2553,7 +2556,7 @@ const GROUPS = [
   { id: "dashboard", label: "대시보드", icon: Home, accent: "#4c8c5f", tabs: [{ id: "dashboard", label: "요약" }, { id: "today", label: "오늘 할 일" }] },
   { id: "students", label: "학생 관리", icon: Users, accent: "#4c8c5f", tabs: [{ id: "students", label: "학생 명부" }, { id: "routine", label: "루틴체크" }] },
   { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }, { id: "badges", label: "칭찬배지" }] },
-  { id: "schedule", label: "일정·자습실", icon: CalendarClock, accent: "#e2822f", tabs: [{ id: "sessions", label: "보강·클리닉" }, { id: "seats", label: "자습실 관리" }] },
+  { id: "schedule", label: "일정·자습실", icon: CalendarClock, accent: "#e2822f", tabs: [{ id: "sessions", label: "보강·클리닉" }, { id: "requests", label: "결석·보강 신고" }, { id: "seats", label: "자습실 관리" }] },
   { id: "classroom", label: "강의실", icon: BookOpen, accent: "#c65a1f", tabs: [{ id: "videos", label: "강의 업로드" }, { id: "curriculum", label: "커리큘럼" }, { id: "eduPhilosophy", label: "교육관" }, { id: "classSchedule", label: "반 시간표" }] },
   { id: "comm", label: "소통", icon: Bell, accent: "#c65a1f", tabs: [{ id: "alerts", label: "학부모 알림" }, { id: "requests", label: "요청함" }, { id: "messages", label: "1:1 문의" }] },
   { id: "staff", label: "강사 관리", icon: GraduationCap, accent: "#7a8cc4", tabs: [{ id: "teachers", label: "강사 계정" }] },
@@ -3019,7 +3022,6 @@ const TEACHER_TABS = [
   { id: "today", label: "오늘 현황", icon: Home },
   { id: "routine", label: "오늘의 루틴", icon: ClipboardList },
   { id: "weeklyRoutine", label: "주간 루틴", icon: TrendingUp },
-  { id: "students", label: "학생등록", icon: Users },
   { id: "homework", label: "숙제", icon: BookOpen },
   { id: "classSchedule", label: "반 시간표", icon: CalendarClock },
   { id: "tests", label: "테스트기록", icon: ClipboardCheck },
@@ -3065,7 +3067,6 @@ function TeacherHome({ data, setData, teacher, onLogout }) {
       {tab === "today" && <TeacherTodayTab data={data} scopeClassGroups={teacher.classGroups} />}
       {tab === "routine" && <DailyRoutineTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "weeklyRoutine" && <WeeklyRoutineTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
-      {tab === "students" && <TeacherStudentsTab data={data} setData={setData} teacher={teacher} />}
       {tab === "homework" && <HomeworkTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "classSchedule" && <ClassScheduleTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "tests" && <TestsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
@@ -3195,7 +3196,7 @@ function PlannerTaskList({ data, setData, studentId, date, readOnly }) {
           {Object.keys(bySubject).map(subj => (
             <div key={subj}>
               <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colorForSubject(subj) }} />
+                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colorForSubject(subj, studentSubjectList(data, studentId)) }} />
                 <span className="text-xs font-bold" style={{ color: "#2b2417" }}>{subj}</span>
               </div>
               <ul className="flex flex-col gap-1.5">
@@ -3259,6 +3260,11 @@ function StudyTimer({ data, setData, studentId }) {
     const id = setInterval(() => forceTick(t => t + 1), 1000);
     return () => clearInterval(id);
   }, [running]);
+
+  // 진행중일 때는 화면이 꺼지거나 앱을 나가도 계속 정확하게 흘러가요.
+  // (기술적으로 "잠깐 화면 끔"이랑 "다른 데 가서 딴짓"을 구분할 방법이 없어서,
+  //  강제로 끊기보다는 기록을 투명하게 남겨서 나중에 확인 가능하게 하는 쪽을 택함 —
+  //  저장 안 하고 "나가기"를 누르면 그 세션은 초기화됨)
 
   const currentElapsedMs = elapsedMs + (running && segmentStart ? (Date.now() - segmentStart) : 0);
   const totalSeconds = Math.floor(currentElapsedMs / 1000);
@@ -3332,15 +3338,23 @@ function StudyTimer({ data, setData, studentId }) {
 }
 
 // 하루 학습 타임테이블 (사진 속 다이어리처럼 시간대별 막대로 시각화)
-const SUBJECT_PALETTE = ["#e63946", "#f77f00", "#d4a017", "#2a9d3e", "#1d6fd6", "#7b2cbf"];
-function colorForSubject(subject) {
-  const s = subject || "";
+const SUBJECT_PALETTE = ["#e63946", "#f77f00", "#d4a017", "#2a9d3e", "#1d6fd6", "#7b2cbf", "#c2185b", "#00897b", "#5d4037", "#43568c", "#8d6e00", "#37474f"];
+function studentSubjectList(data, studentId) {
+  return [...new Set(data.plannerBlocks.filter(b => b.studentId === studentId).map(b => b.subject).filter(Boolean))].sort();
+}
+function colorForSubject(subject, subjectList) {
+  if (!subject) return SUBJECT_PALETTE[0];
+  if (subjectList && subjectList.length) {
+    const idx = subjectList.indexOf(subject);
+    if (idx >= 0) return SUBJECT_PALETTE[idx % SUBJECT_PALETTE.length];
+  }
+  // subjectList가 없을 때만 예비로 해시 사용 (겹칠 수 있음 — 되도록 subjectList를 넘겨서 호출할 것)
   let hash = 0;
-  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < subject.length; i++) hash = (hash * 31 + subject.charCodeAt(i)) >>> 0;
   return SUBJECT_PALETTE[hash % SUBJECT_PALETTE.length];
 }
 
-function DayTimeline({ blocks }) {
+function DayTimeline({ blocks, subjectList }) {
   if (blocks.length === 0) return <EmptyState text="이 날짜에 기록된 공부 시간이 없습니다." />;
   const toMinutes = (hhmm) => { const [h, m] = (hhmm || "00:00").split(":").map(Number); return h * 60 + m; };
   // 당일 오전 6시 ~ 다음날 새벽 3시 고정 (21시간)
@@ -3375,7 +3389,7 @@ function DayTimeline({ blocks }) {
               id: b.id + "-" + h,
               leftPct: ((os - hourStart) / 60) * 100,
               widthPct: ((oe - os) / 60) * 100,
-              color: b.done === false ? "#e4d8ba" : colorForSubject(b.subject),
+              color: b.done === false ? "#e4d8ba" : colorForSubject(b.subject, subjectList),
               opacity: b.done === false ? 0.6 : 1,
             };
           }).filter(Boolean);
@@ -3398,7 +3412,7 @@ function DayTimeline({ blocks }) {
         <div className="flex flex-wrap gap-x-3 gap-y-1 px-1">
           {subjects.map(subj => (
             <div key={subj} className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colorForSubject(subj) }} />
+              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colorForSubject(subj, subjectList) }} />
               <span className="text-[10px]" style={{ color: "#7a6f52" }}>{subj}</span>
             </div>
           ))}
@@ -3452,7 +3466,7 @@ function StudentPlannerTimetable({ data, setData, studentId }) {
           <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>학습 타임테이블</h3>
           <input type="date" className="rounded-lg px-2 py-1.5 text-xs" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
         </div>
-        <DayTimeline blocks={dayBlocks} />
+        <DayTimeline blocks={dayBlocks} subjectList={studentSubjectList(data, studentId)} />
         <div className="flex items-center justify-between pt-1">
           <span className="text-xs" style={{ color: "#7a6f52" }}>{date}</span>
           <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>순수 공부시간 {formatMinutes(todayPureMinutes)}</span>
