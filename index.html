@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-83";
+const APP_VERSION = "2026-09-14-85";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,8 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
 
 
 
@@ -1420,6 +1422,147 @@ function weeklyPlannerTaskRate(data, studentId, weekStart) {
   return Math.round((done / tasks.length) * 100);
 }
 
+function monthlyPlannerTaskRate(data, studentId, monthStr) {
+  const tasks = (data.plannerTasks || []).filter(t => t.studentId === studentId && t.date.slice(0, 7) === monthStr);
+  if (tasks.length === 0) return null;
+  const done = tasks.filter(t => t.done).length;
+  return Math.round((done / tasks.length) * 100);
+}
+
+function monthlyRoutineStats(data, studentId, monthStr) {
+  const monthRoutines = data.routines.filter(r => r.studentId === studentId && r.date.slice(0, 7) === monthStr);
+  const perItem = {};
+  ROUTINE_ITEM_DEFS.forEach(def => { perItem[def.key] = []; });
+  const practiceCounts = [];
+  const accuracies = [];
+  monthRoutines.forEach(r => {
+    const items = r.items || [];
+    const practiceItem = items.find(it => it.key === "practice");
+    const wrongItem = items.find(it => it.key === "wrong");
+    const pc = Number(practiceItem?.result) || 0;
+    const wc = Number(wrongItem?.result) || 0;
+    if (pc > 0) {
+      practiceCounts.push(pc);
+      accuracies.push(Math.max(0, Math.min(100, Math.round(((pc - wc) / pc) * 100))));
+    }
+    items.forEach(it => {
+      if (it.key === "wrong" || it.key === "practice" || it.key === "class" || it.key === "review") return; // 따로 집계
+      if (it.key === "homework") {
+        if (!it.result) return;
+        const hwRate = it.result === "완료" ? 100 : (it.result === "기한초과" ? 50 : 0);
+        perItem.homework.push(hwRate);
+        return;
+      }
+      const rate = (it.kind === "boolean" || it.kind === "choice") ? (it.result ? 100 : 0) : 0;
+      if (rate !== null && perItem[it.key]) perItem[it.key].push(rate);
+    });
+  });
+  const itemAverages = ROUTINE_ITEM_DEFS.filter(def => def.key !== "wrong" && def.key !== "practice" && def.key !== "class" && def.key !== "review").map(def => {
+    const arr = perItem[def.key];
+    return { ...def, avg: arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null };
+  });
+  const avgPracticeCount = practiceCounts.length ? Math.round(practiceCounts.reduce((a, b) => a + b, 0) / practiceCounts.length) : null;
+  const avgAccuracy = accuracies.length ? Math.round(accuracies.reduce((a, b) => a + b, 0) / accuracies.length) : null;
+  const validAverages = itemAverages.filter(x => x.avg !== null).map(x => x.avg);
+  const overall = validAverages.length ? Math.round(validAverages.reduce((a, b) => a + b, 0) / validAverages.length) : null;
+  const testScores = monthRoutines.filter(r => r.testScore != null).map(r => r.testScore);
+  const testAvg = testScores.length ? Math.round(testScores.reduce((a, b) => a + b, 0) / testScores.length) : null;
+  return { monthRoutines, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy };
+}
+
+function monthlyStudyMinutes(data, studentId, monthStr) {
+  return data.plannerBlocks.filter(b => b.studentId === studentId && b.done && b.date.slice(0, 7) === monthStr)
+    .reduce((s, b) => s + minutesBetween(b.start, b.end), 0);
+}
+
+function monthlyHomeworkSubmitRate(data, studentId, monthStr) {
+  const hws = data.homeworks.filter(h => h.studentId === studentId && (h.dueDate || h.date).slice(0, 7) === monthStr);
+  if (hws.length === 0) return null;
+  const onTime = hws.filter(h => h.submitted && !h.submittedLate).length;
+  return Math.round((onTime / hws.length) * 100);
+}
+
+function buildMonthlyReportText(student, monthStr, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, studyMinutes, hwRate) {
+  const lines = [];
+  lines.push("🗓️ 월간 ROUTINE 리포트");
+  lines.push(`${student?.name || ""} / ${student?.grade || ""}`);
+  lines.push(`${monthStr}`);
+  lines.push("");
+  lines.push(`이번 달 실제 달성률 ${overall === null ? "-" : `${overall}%`}`);
+  lines.push(`이번 달 총 순공시간 ${formatMinutes(studyMinutes)}`);
+  if (hwRate !== null) lines.push(`숙제 기한 내 제출률 ${hwRate}%`);
+  lines.push("");
+  itemAverages.forEach(it => {
+    lines.push(`${it.label} ${it.avg === null ? "기록없음" : `${it.avg}%`}`);
+  });
+  if (avgPracticeCount !== null) lines.push(`하루 평균 문제풀이 ${avgPracticeCount}문제`);
+  if (avgAccuracy !== null) lines.push(`평균 정답률 ${avgAccuracy}%`);
+  if (testAvg !== null) lines.push(`테스트 평균 ${testAvg}점`);
+  return lines.join("\n");
+}
+
+function MonthlyRoutineBlock({ data, setData, studentId, month, showAlertButton }) {
+  const student = data.students.find(s => s.id === studentId);
+  const { itemAverages, testAvg, avgPracticeCount, avgAccuracy } = monthlyRoutineStats(data, studentId, month);
+  const overall = monthlyPlannerTaskRate(data, studentId, month);
+  const studyMinutes = monthlyStudyMinutes(data, studentId, month);
+  const hwRate = monthlyHomeworkSubmitRate(data, studentId, month);
+
+  const sendReport = () => {
+    const message = buildMonthlyReportText(student, month, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, studyMinutes, hwRate);
+    const alert = { id: uid(), studentId, sourceKey: `monthly-report:${studentId}:${month}:${Date.now()}`, kind: "월간 리포트", message, status: "대기", createdAt: new Date().toISOString() };
+    setData({ ...data, alerts: [...data.alerts, alert] });
+  };
+
+  return (
+    <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+      <div className="flex items-center justify-between">
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>월간 리포트 ({month})</h3>
+        <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>실제 달성률 {overall === null ? "-" : `${overall}%`}</span>
+      </div>
+      <ul className="flex flex-col gap-1.5">
+        <li className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+          <span className="text-sm" style={{ color: "#2b2417" }}>총 순공시간</span>
+          <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>{formatMinutes(studyMinutes)}</span>
+        </li>
+        {hwRate !== null && (
+          <li className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+            <span className="text-sm" style={{ color: "#2b2417" }}>숙제 기한 내 제출률</span>
+            <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>{hwRate}%</span>
+          </li>
+        )}
+        {itemAverages.map(it => (
+          <li key={it.key} className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+            <span className="text-sm" style={{ color: "#2b2417" }}>{it.label}</span>
+            <span className="text-sm font-bold" style={{ color: it.avg !== null && it.avg < PASS_RATE ? "var(--coral)" : "var(--gold)" }}>{it.avg === null ? "기록없음" : `${it.avg}%`}</span>
+          </li>
+        ))}
+        {avgPracticeCount !== null && (
+          <li className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+            <span className="text-sm" style={{ color: "#2b2417" }}>하루 평균 문제풀이</span>
+            <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>{avgPracticeCount}문제</span>
+          </li>
+        )}
+        {avgAccuracy !== null && (
+          <li className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+            <span className="text-sm" style={{ color: "#2b2417" }}>평균 정답률</span>
+            <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>{avgAccuracy}%</span>
+          </li>
+        )}
+        {testAvg !== null && (
+          <li className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+            <span className="text-sm" style={{ color: "#2b2417" }}>테스트 평균</span>
+            <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>{testAvg}점</span>
+          </li>
+        )}
+      </ul>
+      {showAlertButton && (
+        <button onClick={sendReport} className="w-full py-2.5 rounded-lg text-sm font-semibold" style={btnGold}>이번 달 리포트 알림 생성</button>
+      )}
+    </div>
+  );
+}
+
 // 도장판 스타일: 30칸을 채우면 완성되는 형태 (size: "normal" | "small")
 function StampGrid({ filled, total = 30, size = "normal", icon = "✓" }) {
   const dim = size === "small" ? 16 : 26;
@@ -1758,6 +1901,7 @@ function AlertsTab({ data, setData }) {
   const studentPhone = (id) => data.students.find(s => s.id === id)?.parentPhone;
   const markSent = (id) => setData({ ...data, alerts: data.alerts.map(a => a.id === id ? { ...a, status: "발송완료" } : a) });
   const remove = (id) => setData({ ...data, alerts: data.alerts.filter(a => a.id !== id) });
+  const removeAllSent = () => { if (window.confirm(`발송 완료된 알림 ${data.alerts.filter(a => a.status !== "대기").length}건을 모두 삭제할까요?`)) setData({ ...data, alerts: data.alerts.filter(a => a.status === "대기") }); };
   const copy = async (a) => { try { await navigator.clipboard.writeText(a.message); setCopiedId(a.id); setTimeout(() => setCopiedId(null), 1500); } catch (e) {} };
   const pending = data.alerts.filter(a => a.status === "대기").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const sent = data.alerts.filter(a => a.status === "발송완료").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -1788,7 +1932,12 @@ function AlertsTab({ data, setData }) {
         <p className="text-[11px] mt-3" style={{ color: "#8a7f5e" }}>복사 버튼으로 메시지를 문자·카카오톡에 붙여넣어 보낼 수 있습니다.</p>
       </div>
       <div className="rounded-2xl p-4" style={panel}>
-        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>발송 완료 ({sent.length})</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>발송 완료 ({sent.length})</h3>
+          {sent.length > 0 && (
+            <button onClick={removeAllSent} className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: "#efe3c8", color: "var(--coral)" }}><Trash2 size={12} />일괄삭제</button>
+          )}
+        </div>
         {sent.length === 0 ? <EmptyState text="발송 완료된 알림이 없습니다." /> : <ul className="flex flex-col gap-2">{sent.map(a => <Row key={a.id} a={a} />)}</ul>}
       </div>
     </div>
@@ -2287,6 +2436,7 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
   const comments = data.teacherComments.filter(c => c.studentId === studentId);
   const notes = data.counselingNotes.filter(c => c.studentId === studentId);
   const [plannerViewDate, setPlannerViewDate] = useState(blockDates[0] || todayStr());
+  const [reportMonth, setReportMonth] = useState(todayStr().slice(0, 7));
 
   const recentHomeworks = homeworks.slice(0, 8);
   const submittedRate = homeworks.length ? Math.round((homeworks.filter(h => h.submitted).length / homeworks.length) * 100) : null;
@@ -2468,6 +2618,10 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
         </div>
         <div className="pt-2 mt-1" style={{ borderTop: "1px solid #e4d8ba" }}>
           <WeeklyRoutineBlock data={data} setData={setData} studentId={studentId} weekStart={mondayOf(todayStr())} showAlertButton={canEdit} bare hideTitle />
+        </div>
+        <div className="pt-2 mt-1 flex flex-col gap-2" style={{ borderTop: "1px solid #e4d8ba" }}>
+          <input type="month" className="rounded-lg px-2 py-1.5 text-xs self-end" style={inputStyle} value={reportMonth} onChange={e => setReportMonth(e.target.value)} />
+          <MonthlyRoutineBlock data={data} setData={setData} studentId={studentId} month={reportMonth} showAlertButton={canEdit} />
         </div>
       </div>
 
