@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-79";
+const APP_VERSION = "2026-09-14-81";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,8 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
 
 
 
@@ -421,10 +423,12 @@ function useAppData() {
 
 function syncAlerts(alerts, sourceKey, shouldExist, buildAlert) {
   const existingPending = alerts.find(a => a.sourceKey === sourceKey && a.status === "대기");
+  const existingHandled = alerts.find(a => a.sourceKey === sourceKey && a.status !== "대기");
   if (shouldExist) {
     if (existingPending) {
       return alerts.map(a => a.sourceKey === sourceKey && a.status === "대기" ? { ...a, ...buildAlert(), id: a.id, sourceKey, status: "대기" } : a);
     }
+    if (existingHandled) return alerts; // 이미 확인·발송 처리된 건은 조건이 그대로여도 재알림 안 만듦
     return [...alerts, { id: uid(), sourceKey, status: "대기", createdAt: new Date().toISOString(), ...buildAlert() }];
   }
   return existingPending ? alerts.filter(a => !(a.sourceKey === sourceKey && a.status === "대기")) : alerts;
@@ -864,6 +868,7 @@ function HomeworkTab({ data, setData, scopeClassGroups }) {
     setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? updated : x), alerts: syncHomeworkAlert(updated, data) });
   };
   const remove = (id) => setData({ ...data, homeworks: data.homeworks.filter(h => h.id !== id), alerts: data.alerts.filter(a => a.sourceKey !== `homework:${id}` || a.status !== "대기") });
+  const toggleReviewed = (h) => setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? { ...x, reviewedByStaff: !x.reviewedByStaff } : x) });
 
   return (
     <div className="flex flex-col gap-4">
@@ -898,6 +903,9 @@ function HomeworkTab({ data, setData, scopeClassGroups }) {
                 {(h.submittedAt || (h.photos && h.photos.length > 0) || h.photo) && (
                   <div className="flex items-center gap-2 flex-wrap">
                     {h.submittedAt && <span className="text-xs flex-shrink-0" style={{ color: "#7a6f52" }}>{formatTime(h.submittedAt)} 제출</span>}
+                    {h.submitted && (
+                      <button onClick={() => toggleReviewed(h)} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: h.reviewedByStaff ? "#4c8c5f" : "#e4d8ba", color: h.reviewedByStaff ? "#fff" : "#5c543e" }}>{h.reviewedByStaff ? "확인함" : "확인 안 함"}</button>
+                    )}
                     {(() => {
                       const photoList = h.photos || (h.photo ? [h.photo] : []);
                       return photoList.length > 0 ? (
@@ -959,7 +967,7 @@ function SessionsTab({ data, setData, scopeClassGroups }) {
           <Field label="학생"><StudentSelect students={scopedStudents} value={studentId} onChange={setStudentId} /></Field>
           <Field label="유형">
             <select className={inputCls} style={inputStyle} value={type} onChange={e => setType(e.target.value)}>
-              <option value="보강">보강</option><option value="클리닉">클리닉</option>
+              <option value="보강">보강</option><option value="클리닉">클리닉</option><option value="결석">결석</option>
             </select>
           </Field>
           <Field label="날짜"><input type="date" className={inputCls} style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
@@ -2376,10 +2384,16 @@ function StudentRoutineCheck({ data, setData, studentId, canEdit }) {
           <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>플래너 자세히 보기</h3>
           <div className="flex items-center gap-2">
             <input type="date" className="rounded-lg px-2 py-1.5 text-xs" style={inputStyle} value={plannerViewDate} onChange={e => setPlannerViewDate(e.target.value)} />
-            {canEdit && (
+            {canEdit ? (
               <button onClick={togglePlannerCheck} className="flex items-center gap-1 text-[10px] px-2 py-1.5 rounded-full font-semibold flex-shrink-0" style={{ background: plannerCheck ? "#4c8c5f" : "#e4d8ba", color: plannerCheck ? "#fff" : "#5c543e" }}>
                 {plannerCheck && <Check size={10} />}{plannerCheck ? "확인함" : "확인"}
               </button>
+            ) : (
+              plannerCheck && (
+                <span className="flex items-center gap-1 text-[10px] px-2 py-1.5 rounded-full font-semibold flex-shrink-0" style={{ background: "#4c8c5f", color: "#fff" }}>
+                  <Check size={10} />선생님 확인함
+                </span>
+              )
             )}
           </div>
         </div>
@@ -2556,7 +2570,7 @@ const GROUPS = [
   { id: "dashboard", label: "대시보드", icon: Home, accent: "#4c8c5f", tabs: [{ id: "dashboard", label: "요약" }, { id: "today", label: "오늘 할 일" }] },
   { id: "students", label: "학생 관리", icon: Users, accent: "#4c8c5f", tabs: [{ id: "students", label: "학생 명부" }, { id: "routine", label: "루틴체크" }] },
   { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }, { id: "badges", label: "칭찬배지" }] },
-  { id: "schedule", label: "일정·자습실", icon: CalendarClock, accent: "#e2822f", tabs: [{ id: "sessions", label: "보강·클리닉" }, { id: "requests", label: "결석·보강 신고" }, { id: "seats", label: "자습실 관리" }] },
+  { id: "schedule", label: "일정·자습실", icon: CalendarClock, accent: "#e2822f", tabs: [{ id: "sessions", label: "보강·클리닉" }, { id: "requests", label: "결석신고" }, { id: "seats", label: "자습실 관리" }] },
   { id: "classroom", label: "강의실", icon: BookOpen, accent: "#c65a1f", tabs: [{ id: "videos", label: "강의 업로드" }, { id: "curriculum", label: "커리큘럼" }, { id: "eduPhilosophy", label: "교육관" }, { id: "classSchedule", label: "반 시간표" }] },
   { id: "comm", label: "소통", icon: Bell, accent: "#c65a1f", tabs: [{ id: "alerts", label: "학부모 알림" }, { id: "requests", label: "요청함" }, { id: "messages", label: "1:1 문의" }] },
   { id: "staff", label: "강사 관리", icon: GraduationCap, accent: "#7a8cc4", tabs: [{ id: "teachers", label: "강사 계정" }] },
@@ -3029,7 +3043,7 @@ const TEACHER_TABS = [
   { id: "sessions", label: "보강·클리닉", icon: CalendarClock },
   { id: "attendance", label: "출결기록", icon: ClipboardSignature },
   { id: "comments", label: "코멘트", icon: MessageSquare },
-  { id: "requests", label: "결석·보강", icon: Calendar },
+  { id: "requests", label: "결석신고", icon: Calendar },
   { id: "comm", label: "소통", icon: Bell },
 ];
 
@@ -3325,7 +3339,7 @@ function StudyTimer({ data, setData, studentId }) {
       ) : (
         <button onClick={pause} className="w-full py-3 rounded-xl text-sm font-bold" style={{ background: "var(--coral)", color: "#fff" }}>쉬는 중 (탭해서 멈춤)</button>
       )}
-      <p className="text-[11px] text-center" style={{ color: "var(--coral)" }}>⚠️ 공부 시작 후 카톡·유튜브 등 다른 앱을 열면 공부시간이 초기화돼요</p>
+      <p className="text-[11px] text-center" style={{ color: "#8a7f5e" }}>과목·시간·타임테이블이 선생님 화면에 그대로 기록돼요 — 정직하게 기록해주세요!</p>
       {currentElapsedMs > 0 && !running && (
         <div className="flex gap-2">
           <button onClick={saveToPlanner} className="flex-1 py-2.5 rounded-lg text-sm font-semibold" style={{ background: "#4c8c5f", color: "#fff" }}>순공시간으로 저장</button>
@@ -3582,6 +3596,9 @@ function StudentHomeworkTab({ data, setData, studentId }) {
                     {h.submitted ? <Check size={12} /> : <ClipboardCheck size={12} />}{h.submitted ? "제출완료 (취소)" : "제출하기"}
                   </button>
                 </div>
+                {h.submitted && h.reviewedByStaff && (
+                  <span className="self-start text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1" style={{ background: "#4c8c5f", color: "#fff" }}><Check size={10} />선생님이 확인했어요</span>
+                )}
                 <div className="flex items-center gap-2 flex-wrap">
                   <label className="text-xs underline cursor-pointer" style={{ color: "var(--gold)" }}>
                     {uploadingId === h.id ? "처리 중…" : photos.length > 0 ? "사진 더 올리기" : "모르는 문제 사진 올리기"}
