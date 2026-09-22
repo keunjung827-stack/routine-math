@@ -73,7 +73,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-96";
+const APP_VERSION = "2026-09-14-97";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -142,6 +142,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -392,6 +393,7 @@ function useAppData() {
   const [data, setDataState] = useState(emptyData());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const dataRef = useRef(data);
   const savingRef = useRef(saving);
   useEffect(() => { dataRef.current = data; }, [data]);
@@ -432,8 +434,14 @@ function useAppData() {
   const setData = async (next) => {
     setDataState(next);
     setSaving(true);
-    try { await window.storage.set(STORAGE_KEY, JSON.stringify(next), true); }
-    catch (e) { console.error("저장 실패", e); }
+    setSaveError(false);
+    try {
+      await window.storage.set(STORAGE_KEY, JSON.stringify(next), true);
+    } catch (e) {
+      console.error("저장 실패, 재시도 중", e);
+      try { await window.storage.set(STORAGE_KEY, JSON.stringify(next), true); }
+      catch (e2) { console.error("저장 재시도 실패", e2); setSaveError(true); }
+    }
     setSaving(false);
   };
 
@@ -451,12 +459,18 @@ function useAppData() {
     } catch (e) { /* 최신 데이터를 못 받아오면 로컬 데이터 기준으로 진행 */ }
     const next = patchFn(base);
     setDataState(next);
-    try { await window.storage.set(STORAGE_KEY, JSON.stringify(next), true); }
-    catch (e) { console.error("저장 실패", e); }
+    setSaveError(false);
+    try {
+      await window.storage.set(STORAGE_KEY, JSON.stringify(next), true);
+    } catch (e) {
+      console.error("저장 실패, 재시도 중", e);
+      try { await window.storage.set(STORAGE_KEY, JSON.stringify(next), true); }
+      catch (e2) { console.error("저장 재시도 실패", e2); setSaveError(true); }
+    }
     setSaving(false);
   };
 
-  return { data, setData, patchData, loading, saving };
+  return { data, setData, patchData, loading, saving, saveError };
 }
 
 function syncAlerts(alerts, sourceKey, shouldExist, buildAlert) {
@@ -4158,7 +4172,7 @@ function RoleGate({ onTeacher, onStudent, onAdmin }) {
 }
 
 function App() {
-  const { data, setData, patchData, loading, saving } = useAppData();
+  const { data, setData, patchData, loading, saving, saveError } = useAppData();
   const [view, setView] = useState("gate");
   const [studentId, setStudentId] = useState(null);
   const [teacherId, setTeacherId] = useState(null);
@@ -4260,7 +4274,16 @@ function App() {
       {view === "adminGate" && <AdminGate onPass={() => setView("admin")} onBack={() => setView("gate")} />}
       {view === "admin" && <AdminPanel data={data} setData={setData} patchData={patchData} onExit={() => setView("gate")} />}
 
-      {saving && <div className="fixed bottom-2 left-1/2 -translate-x-1/2 text-[10px] px-2 py-1 rounded-full" style={{ background: "#fffcf6", color: "#7a6f52" }}>저장 중…</div>}
+      {saving && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 text-sm font-bold px-4 py-2 rounded-full flex items-center gap-2" style={{ background: "#2b2417", color: "#fff", zIndex: 9999 }}>
+          <Loader2 size={14} className="animate-spin" />저장 중… (잠시만 기다려주세요)
+        </div>
+      )}
+      {saveError && !saving && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 text-sm font-bold px-4 py-2 rounded-full text-center" style={{ background: "var(--coral)", color: "#fff", zIndex: 9999 }}>
+          ⚠️ 저장 실패! 인터넷 연결을 확인하고 다시 시도해주세요.
+        </div>
+      )}
     </div>
   );
 }
