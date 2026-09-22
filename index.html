@@ -73,7 +73,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-94";
+const APP_VERSION = "2026-09-14-95";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -142,6 +142,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -904,7 +905,7 @@ function HomeworkTab({ data, setData, patchData, scopeClassGroups }) {
     setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? updated : x), alerts: syncHomeworkAlert(updated, data) });
   };
   const remove = (id) => setData({ ...data, homeworks: data.homeworks.filter(h => h.id !== id), alerts: data.alerts.filter(a => a.sourceKey !== `homework:${id}` || a.status !== "대기") });
-  const toggleReviewed = (h) => { const target = !h.reviewedByStaff; const apply = (base) => ({ ...base, homeworks: base.homeworks.map(x => x.id === h.id ? { ...x, reviewedByStaff: target } : x) }); if (patchData) patchData(apply); else setData(apply(data)); };
+  const toggleReviewed = (h) => setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? { ...x, reviewedByStaff: !x.reviewedByStaff } : x) });
 
   return (
     <div className="flex flex-col gap-4">
@@ -2511,14 +2512,10 @@ function StudentRoutineCheck({ data, setData, patchData, studentId, canEdit }) {
   const updateTestField = (testId, field, value) => setData({ ...data, tests: data.tests.map(t => t.id === testId ? { ...t, [field]: value } : t) });
   const plannerCheck = (data.plannerChecks || []).find(c => c.studentId === studentId && c.date === plannerViewDate);
   const togglePlannerCheck = () => {
-    const apply = (base) => {
-      const checks = base.plannerChecks || [];
-      const existing = checks.find(c => c.studentId === studentId && c.date === plannerViewDate);
-      return existing
-        ? { ...base, plannerChecks: checks.filter(c => c.id !== existing.id) }
-        : { ...base, plannerChecks: [...checks, { id: uid(), studentId, date: plannerViewDate, checked: true }] };
-    };
-    if (patchData) patchData(apply); else setData(apply(data));
+    const checks = data.plannerChecks || [];
+    const existing = checks.find(c => c.studentId === studentId && c.date === plannerViewDate);
+    if (existing) setData({ ...data, plannerChecks: checks.filter(c => c.id !== existing.id) });
+    else setData({ ...data, plannerChecks: [...checks, { id: uid(), studentId, date: plannerViewDate, checked: true }] });
   };
 
   return (
@@ -2549,7 +2546,7 @@ function StudentRoutineCheck({ data, setData, patchData, studentId, canEdit }) {
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: h.submitted ? (h.submittedLate ? "var(--coral)" : "#4c8c5f") : "var(--coral)", color: "#fff" }}>{h.submitted ? "제출" : "미제출"}</span>
                     {h.submitted && canEdit && (
-                      <button onClick={() => { const target = !h.reviewedByStaff; const apply = (base) => ({ ...base, homeworks: base.homeworks.map(x => x.id === h.id ? { ...x, reviewedByStaff: target } : x) }); if (patchData) patchData(apply); else setData(apply(data)); }} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: h.reviewedByStaff ? "#4c8c5f" : "#e4d8ba", color: h.reviewedByStaff ? "#fff" : "#5c543e" }}>{h.reviewedByStaff ? "확인함" : "확인 안 함"}</button>
+                      <button onClick={() => setData({ ...data, homeworks: data.homeworks.map(x => x.id === h.id ? { ...x, reviewedByStaff: !x.reviewedByStaff } : x) })} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: h.reviewedByStaff ? "#4c8c5f" : "#e4d8ba", color: h.reviewedByStaff ? "#fff" : "#5c543e" }}>{h.reviewedByStaff ? "확인함" : "확인 안 함"}</button>
                     )}
                   </div>
                 </div>
