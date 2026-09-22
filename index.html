@@ -73,7 +73,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-97";
+const APP_VERSION = "2026-09-14-99";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -142,6 +142,8 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
 
 
 
@@ -386,6 +388,7 @@ const emptyData = () => ({
   messages: [],
   periodTimes: {},
   plannerChecks: [],
+  timerDrafts: {},
   announcements: [],
 });
 
@@ -796,7 +799,7 @@ function syncHomeworkAlert(entry, data) {
   }));
 }
 
-function fileToCompressedDataURL(file, maxWidth = 640, quality = 0.55) {
+function fileToCompressedDataURL(file, maxWidth = 480, quality = 0.45) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -3477,11 +3480,14 @@ function StudyTimer({ data, setData, studentId }) {
     } catch (e) { return null; }
   };
   const saved = loadSaved();
-  const [running, setRunning] = useState(saved?.running || false);
-  const [elapsedMs, setElapsedMs] = useState(saved?.elapsedMs || 0);
-  const [segmentStart, setSegmentStart] = useState(saved?.segmentStart || null);
-  const [subject, setSubject] = useState(saved?.subject || "");
-  const [detail, setDetail] = useState(saved?.detail || "");
+  const serverDraft = (data.timerDrafts || {})[studentId];
+  // 로컬 저장소에 기록이 없는데(예: 브라우저 저장공간이 초기화됨) 서버에 백업된 일시정지 기록이 있으면 그걸로 복구
+  const initial = (saved && (saved.elapsedMs > 0 || saved.running)) ? saved : (serverDraft || saved);
+  const [running, setRunning] = useState(initial?.running || false);
+  const [elapsedMs, setElapsedMs] = useState(initial?.elapsedMs || 0);
+  const [segmentStart, setSegmentStart] = useState(initial?.segmentStart || null);
+  const [subject, setSubject] = useState(initial?.subject || "");
+  const [detail, setDetail] = useState(initial?.detail || "");
   const [, forceTick] = useState(0);
 
   // 화면이 꺼졌다 켜지거나(폰이 백그라운드에서 페이지를 새로고침해도) 이어서 계산되도록 로컬에 저장
@@ -3508,10 +3514,21 @@ function StudyTimer({ data, setData, studentId }) {
   const ss = String(totalSeconds % 60).padStart(2, "0");
 
   const start = () => { setSegmentStart(Date.now()); setRunning(true); };
-  const pause = () => { setElapsedMs(elapsedMs + (Date.now() - segmentStart)); setSegmentStart(null); setRunning(false); };
+  const pause = () => {
+    const newElapsed = elapsedMs + (Date.now() - segmentStart);
+    setElapsedMs(newElapsed);
+    setSegmentStart(null);
+    setRunning(false);
+    setData({ ...data, timerDrafts: { ...(data.timerDrafts || {}), [studentId]: { running: false, elapsedMs: newElapsed, segmentStart: null, subject, detail, pausedAt: new Date().toISOString() } } });
+  };
   const reset = () => {
     setElapsedMs(0); setSegmentStart(null); setRunning(false);
     try { localStorage.removeItem(storageKey); } catch (e) { /* 무시 */ }
+    if ((data.timerDrafts || {})[studentId]) {
+      const drafts = { ...data.timerDrafts };
+      delete drafts[studentId];
+      setData({ ...data, timerDrafts: drafts });
+    }
   };
 
   // 참고: 화면 꺼짐/다른 앱 전환은 웹에서 구분할 방법이 없어서(둘 다 동일하게 "숨김" 처리됨),
@@ -3541,8 +3558,11 @@ function StudyTimer({ data, setData, studentId }) {
       }];
     }
 
-    setData({ ...data, plannerBlocks: newBlocks, alerts });
-    reset();
+    const drafts = { ...(data.timerDrafts || {}) };
+    delete drafts[studentId];
+    setData({ ...data, plannerBlocks: newBlocks, alerts, timerDrafts: drafts });
+    setElapsedMs(0); setSegmentStart(null); setRunning(false);
+    try { localStorage.removeItem(storageKey); } catch (e) { /* 무시 */ }
     setSubject("");
     setDetail("");
   };
