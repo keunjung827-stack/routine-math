@@ -70,7 +70,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-86";
+const APP_VERSION = "2026-09-14-88";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +139,8 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
 
 
 
@@ -405,7 +407,7 @@ function useAppData() {
 
   // 화면을 오래 켜놔도 "옛날 데이터"로 덮어쓰지 않도록, 주기적으로/탭이 다시 보일 때 최신 데이터를 다시 받아옴
   useEffect(() => {
-    const interval = setInterval(() => { if (!savingRef.current) fetchLatest(); }, 20000);
+    const interval = setInterval(() => { if (!savingRef.current) fetchLatest(); }, 8000);
     const onVisible = () => { if (document.visibilityState === "visible" && !savingRef.current) fetchLatest(); };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
@@ -3508,7 +3510,9 @@ function StudyTimer({ data, setData, studentId }) {
       ) : (
         <button onClick={pause} className="w-full py-3 rounded-xl text-sm font-bold" style={{ background: "var(--coral)", color: "#fff" }}>쉬는 중 (탭해서 멈춤)</button>
       )}
-      <p className="text-[11px] text-center" style={{ color: "#8a7f5e" }}>과목·시간·타임테이블이 선생님 화면에 그대로 기록돼요 — 정직하게 기록해주세요!</p>
+      <div className="rounded-lg p-2.5" style={{ background: "#fff3d6", border: "1px solid #f0d99a" }}>
+        <p className="text-xs font-bold text-center" style={{ color: "#8a5a17" }}>📋 과목·시간·타임테이블이 선생님 화면에 그대로 기록돼요 — 정직하게 기록해주세요!</p>
+      </div>
       {currentElapsedMs > 0 && !running && (
         <div className="flex gap-2">
           <button onClick={saveToPlanner} className="flex-1 py-2.5 rounded-lg text-sm font-semibold" style={{ background: "#4c8c5f", color: "#fff" }}>순공시간으로 저장</button>
