@@ -73,7 +73,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-100";
+const APP_VERSION = "2026-09-14-103";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -142,6 +142,9 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
+
 
 
 
@@ -2993,15 +2996,16 @@ function AttendanceTab({ data, setData, scopeClassGroups }) {
 
   const setStatus = (studentId, status) => {
     const existing = entryFor(studentId);
-    const student = data.students.find(s => s.id === studentId);
     let attendance;
     if (existing) attendance = data.attendance.map(a => a.id === existing.id ? { ...a, status } : a);
     else attendance = [...data.attendance, { id: uid(), studentId, date, status }];
-    const alerts = syncAlerts(data.alerts, `attendance:${studentId}:${date}`, status === "결석", () => ({
-      studentId, kind: "결석",
-      message: `[루틴수학] ${student?.name || ""} 학생이 ${date} 결석 처리되었습니다.`,
-    }));
-    setData({ ...data, attendance, alerts });
+    setData({ ...data, attendance });
+  };
+
+  const clearStatus = (studentId) => {
+    const existing = entryFor(studentId);
+    if (!existing) return;
+    setData({ ...data, attendance: data.attendance.filter(a => a.id !== existing.id) });
   };
 
   const statusColor = { "출석": "#4c8c5f", "지각": "var(--gold)", "결석": "var(--coral)" };
@@ -3020,16 +3024,19 @@ function AttendanceTab({ data, setData, scopeClassGroups }) {
               const entry = entryFor(s.id);
               const cur = entry?.status;
               return (
-                <li key={s.id} className="flex items-center justify-between p-2.5 rounded-lg" style={{ background: "#efe6d0" }}>
+                <li key={s.id} className="flex items-center justify-between p-2.5 rounded-lg flex-wrap gap-y-1" style={{ background: "#efe6d0" }}>
                   <div className="text-sm" style={{ color: "#2b2417" }}>
                     {s.name}
                     {entry?.time && <span className="text-xs ml-2" style={{ color: "#7a6f52" }}>{entry.time} 도착{entry.source === "student" ? " · 학생 직접 체크인" : ""}</span>}
                   </div>
-                  <div className="flex gap-1.5">
+                  <div className="flex gap-1.5 items-center">
                     {ATT_STATUSES.map(st => (
                       <button key={st} onClick={() => setStatus(s.id, st)} className="px-2.5 py-1 rounded-full text-xs font-semibold"
                         style={{ background: cur === st ? statusColor[st] : "#e4d8ba", color: cur === st ? "#fff" : "#5c543e" }}>{st}</button>
                     ))}
+                    {entry && (
+                      <button onClick={() => clearStatus(s.id)} className="p-1.5 rounded-full" style={{ background: "#f8e3c9" }} title="기록 취소"><Trash2 size={13} color="var(--coral)" /></button>
+                    )}
                   </div>
                 </li>
               );
@@ -4070,11 +4077,7 @@ function StudentAttendanceCheckin({ data, setData, studentId }) {
     const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const status = time <= cutoff ? "출석" : "지각";
     const entry = { id: uid(), studentId, date: today, status, time, source: "student" };
-    const alerts = syncAlerts(data.alerts, `attendance:${studentId}:${today}`, status === "지각", () => ({
-      studentId, kind: "지각",
-      message: `[루틴수학] ${student?.name || ""} 학생이 ${today} ${time}에 지각 체크인했습니다.`,
-    }));
-    setData({ ...data, attendance: [...data.attendance, entry], alerts });
+    setData({ ...data, attendance: [...data.attendance, entry] });
   };
 
   const statusColor = { "출석": "#4c8c5f", "지각": "var(--gold)", "결석": "var(--coral)" };
