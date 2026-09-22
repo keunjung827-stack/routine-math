@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-107";
+const APP_VERSION = "2026-09-14-110";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -148,6 +148,9 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
+
 
 
 
@@ -1086,6 +1089,17 @@ function SessionsTab({ data, setData, scopeClassGroups }) {
 }
 
 // ================= ADMIN: 테스트 결과 =================
+function RetestResultInput({ onSubmit }) {
+  const [score, setScore] = useState("");
+  const submit = () => { if (score !== "") { onSubmit(score); setScore(""); } };
+  return (
+    <div className="flex items-center gap-1">
+      <input type="number" placeholder="재시험 점수" className="rounded-lg px-2 py-1 text-xs" style={{ ...inputStyle, width: 90 }} value={score} onChange={e => setScore(e.target.value)} />
+      <button onClick={submit} className="px-2 py-1 rounded-lg text-xs font-semibold" style={{ background: "var(--gold)", color: "#fffaf2" }}>결과 반영</button>
+    </div>
+  );
+}
+
 function TestsTab({ data, setData, scopeClassGroups }) {
   const [studentId, setStudentId] = useState("");
   const [name, setName] = useState("");
@@ -1110,6 +1124,24 @@ function TestsTab({ data, setData, scopeClassGroups }) {
   };
   const remove = (id) => setData({ ...data, tests: data.tests.filter(t => t.id !== id), alerts: data.alerts.filter(a => a.sourceKey !== `test:${id}` || a.status !== "대기") });
   const updateTestField = (testId, field, value) => setData({ ...data, tests: data.tests.map(t => t.id === testId ? { ...t, [field]: value } : t) });
+  const recordRetestResult = (t, retestScoreStr) => {
+    const retestScore = Number(retestScoreStr);
+    if (isNaN(retestScore)) return;
+    const didPass = retestScore >= t.passLine;
+    const historyLine = `재시험 ${todayStr()}: ${retestScore}점 (${didPass ? "통과" : "재재시험 필요"})`;
+    setData({
+      ...data,
+      tests: data.tests.map(x => x.id === t.id ? {
+        ...x,
+        score: retestScore,
+        passed: didPass,
+        retest: !didPass,
+        retestDate: didPass ? "" : x.retestDate,
+        retestCount: (x.retestCount || 0) + 1,
+        note: [x.note, historyLine].filter(Boolean).join("\n"),
+      } : x),
+    });
+  };
   const list = data.tests.filter(t => scopedIds.has(t.studentId) && (!filter || t.studentId === filter)).sort((a, b) => b.date.localeCompare(a.date));
   const summaryByType = filter ? TEST_TYPES.map(tp => {
     const arr = data.tests.filter(t => t.studentId === filter && (t.testType || "일일테스트") === tp);
@@ -1169,7 +1201,11 @@ function TestsTab({ data, setData, scopeClassGroups }) {
                     <button onClick={() => updateTestField(t.id, "passed", !passed)} className="px-2.5 py-1 rounded-full text-xs font-semibold" style={{ background: passed ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>{passed ? "통과" : "미통과"}</button>
                     <button onClick={() => updateTestField(t.id, "retest", !t.retest)} className="px-2.5 py-1 rounded-full text-xs font-semibold" style={{ background: t.retest ? "var(--coral)" : "#e4d8ba", color: t.retest ? "#fff" : "#5c543e" }}>{t.retest ? "재시험 필요" : "재시험 없음"}</button>
                     {t.retest && (
-                      <input type="date" className="rounded-lg px-2 py-1 text-xs" style={inputStyle} value={t.retestDate || ""} onChange={e => updateTestField(t.id, "retestDate", e.target.value)} />
+                      <>
+                        <input type="date" className="rounded-lg px-2 py-1 text-xs" style={inputStyle} value={t.retestDate || ""} onChange={e => updateTestField(t.id, "retestDate", e.target.value)} />
+                        <RetestResultInput onSubmit={(score) => recordRetestResult(t, score)} />
+                        {t.retestCount > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: "#e4d8ba", color: "#5c543e" }}>재시험 {t.retestCount}회째</span>}
+                      </>
                     )}
                   </div>
                   <input className={inputCls} style={{ ...inputStyle, padding: "6px 10px" }} placeholder="강사 메모 (선택)" value={t.note || ""} onChange={e => updateTestField(t.id, "note", e.target.value)} />
@@ -2543,6 +2579,24 @@ function StudentRoutineCheck({ data, setData, patchData, studentId, canEdit }) {
   const addNote = (text) => setData({ ...data, counselingNotes: [...data.counselingNotes, { id: uid(), studentId, date: todayStr(), text }] });
   const removeNote = (id) => setData({ ...data, counselingNotes: data.counselingNotes.filter(c => c.id !== id) });
   const updateTestField = (testId, field, value) => setData({ ...data, tests: data.tests.map(t => t.id === testId ? { ...t, [field]: value } : t) });
+  const recordRetestResult = (t, retestScoreStr) => {
+    const retestScore = Number(retestScoreStr);
+    if (isNaN(retestScore)) return;
+    const didPass = retestScore >= t.passLine;
+    const historyLine = `재시험 ${todayStr()}: ${retestScore}점 (${didPass ? "통과" : "재재시험 필요"})`;
+    setData({
+      ...data,
+      tests: data.tests.map(x => x.id === t.id ? {
+        ...x,
+        score: retestScore,
+        passed: didPass,
+        retest: !didPass,
+        retestDate: didPass ? "" : x.retestDate,
+        retestCount: (x.retestCount || 0) + 1,
+        note: [x.note, historyLine].filter(Boolean).join("\n"),
+      } : x),
+    });
+  };
   const plannerCheck = (data.plannerChecks || []).find(c => c.studentId === studentId && c.date === plannerViewDate);
   const togglePlannerCheck = () => {
     const checks = data.plannerChecks || [];
@@ -2759,7 +2813,11 @@ function StudentRoutineCheck({ data, setData, patchData, studentId, canEdit }) {
                                 <button onClick={() => updateTestField(t.id, "passed", !passed)} className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: passed ? "#4c8c5f" : "var(--coral)", color: "#fff" }}>{passed ? "통과" : "미통과"}</button>
                                 <button onClick={() => updateTestField(t.id, "retest", !t.retest)} className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: t.retest ? "var(--coral)" : "#e4d8ba", color: t.retest ? "#fff" : "#5c543e" }}>{t.retest ? "재시험 필요" : "재시험 없음"}</button>
                                 {t.retest && (
-                                  <input type="date" className="rounded-lg px-2 py-0.5 text-[11px]" style={inputStyle} value={t.retestDate || ""} onChange={e => updateTestField(t.id, "retestDate", e.target.value)} />
+                                  <>
+                                    <input type="date" className="rounded-lg px-2 py-0.5 text-[11px]" style={inputStyle} value={t.retestDate || ""} onChange={e => updateTestField(t.id, "retestDate", e.target.value)} />
+                                    <RetestResultInput onSubmit={(score) => recordRetestResult(t, score)} />
+                                    {t.retestCount > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: "#e4d8ba", color: "#5c543e" }}>재시험 {t.retestCount}회째</span>}
+                                  </>
                                 )}
                               </>
                             ) : (
@@ -2844,8 +2902,6 @@ function AdminHome({ data, onOpen, onExit }) {
   const pendingRequests = data.requests.filter(r => r.status === "대기").length;
   const pendingMessages = pendingMessageThreads(data);
   const badgeFor = { comm: pendingAlerts + pendingRequests + pendingMessages };
-  const upcomingRetests = data.tests.filter(t => t.retest).map(t => ({ ...t, student: data.students.find(s => s.id === t.studentId) }))
-    .sort((a, b) => (a.retestDate || "9999").localeCompare(b.retestDate || "9999"));
   return (
     <div className="min-h-screen px-5 pb-6" style={{ background: "#f6f1e4", paddingTop: "max(24px, calc(env(safe-area-inset-top) + 16px))" }}>
       <div className="flex items-center justify-between mb-1">
@@ -2853,19 +2909,6 @@ function AdminHome({ data, onOpen, onExit }) {
         <button onClick={onExit} className="text-xs px-3 py-1.5 rounded-lg" style={{ border: "1px solid #ddcda0", color: "#7a6f52" }}>나가기</button>
       </div>
       <h1 className="text-xl font-bold mb-5" style={{ fontFamily: "'Noto Serif KR', serif" }}>관리자 홈</h1>
-      {upcomingRetests.length > 0 && (
-        <div className="rounded-2xl p-4 mb-4" style={{ background: "#fffcf6", border: "1px solid #e4d8ba", borderTop: "3px solid var(--coral)" }}>
-          <h3 className="font-bold mb-2 flex items-center gap-2 text-sm" style={{ color: "#2b2417" }}><FlaskConical size={16} color="var(--coral)" />재시험 예정 ({upcomingRetests.length}명)</h3>
-          <ul className="flex flex-col gap-1.5">
-            {upcomingRetests.map(t => (
-              <li key={t.id} className="flex items-center justify-between text-xs px-2 py-1.5 rounded-md" style={{ background: "#f8e3c9" }}>
-                <span style={{ color: "#4a4332" }}>{t.student?.name || "-"} · {t.name}</span>
-                <span className="font-bold" style={{ color: "var(--coral)" }}>{t.retestDate || "날짜 미정"}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
       <div className="grid grid-cols-2 gap-3">
         {GROUPS.map(g => {
           const Icon = g.icon;
@@ -2889,10 +2932,10 @@ function AdminPanel({ data, setData, patchData, onExit }) {
   const [subTab, setSubTab] = useState(null);
   const group = GROUPS.find(g => g.id === openGroup);
 
-  const openGroupById = (id) => {
+  const openGroupById = (id, subTabId) => {
     const g = GROUPS.find(x => x.id === id);
     setOpenGroup(id);
-    setSubTab(g.tabs[0].id);
+    setSubTab(subTabId || g.tabs[0].id);
   };
 
   if (!group) return <AdminHome data={data} onOpen={openGroupById} onExit={onExit} />;
@@ -3247,7 +3290,7 @@ function TeacherCommTab({ data, setData, scopeClassGroups }) {
   );
 }
 
-function TeacherTodayTab({ data, scopeClassGroups }) {
+function TeacherTodayTab({ data, scopeClassGroups, onGoToTests }) {
   const [date, setDate] = useState(todayStr());
   const students = studentsInScope(data.students, scopeClassGroups);
   const groups = {};
@@ -3266,17 +3309,10 @@ function TeacherTodayTab({ data, scopeClassGroups }) {
   return (
     <div className="flex flex-col gap-4">
       {upcomingRetests.length > 0 && (
-        <div className="rounded-2xl p-4" style={{ background: "#fffcf6", border: "1px solid #e4d8ba", borderTop: "3px solid var(--coral)" }}>
-          <h3 className="font-bold mb-2 flex items-center gap-2 text-sm" style={{ color: "#2b2417" }}><FlaskConical size={16} color="var(--coral)" />재시험 예정 ({upcomingRetests.length}명)</h3>
-          <ul className="flex flex-col gap-1.5">
-            {upcomingRetests.map(t => (
-              <li key={t.id} className="flex items-center justify-between text-xs px-2 py-1.5 rounded-md" style={{ background: "#f8e3c9" }}>
-                <span style={{ color: "#4a4332" }}>{t.student?.name || "-"} · {t.name}</span>
-                <span className="font-bold" style={{ color: "var(--coral)" }}>{t.retestDate || "날짜 미정"}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <button onClick={onGoToTests} className="w-full rounded-2xl p-3 flex items-center justify-between" style={{ background: "#fffcf6", border: "1px solid #e4d8ba", borderTop: "3px solid var(--coral)" }}>
+          <span className="flex items-center gap-2 text-sm font-bold" style={{ color: "#2b2417" }}><FlaskConical size={16} color="var(--coral)" />재시험 예정 {upcomingRetests.length}명</span>
+          <span className="text-xs" style={{ color: "var(--coral)" }}>테스트 결과 보기 →</span>
+        </button>
       )}
       <div className="rounded-2xl p-4" style={panel}>
         <Field label="날짜"><input type="date" className={inputCls} style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
@@ -3363,7 +3399,7 @@ function TeacherHome({ data, setData, patchData, teacher, onLogout }) {
           );
         })}
       </div>
-      {tab === "today" && <TeacherTodayTab data={data} scopeClassGroups={teacher.classGroups} />}
+      {tab === "today" && <TeacherTodayTab data={data} scopeClassGroups={teacher.classGroups} onGoToTests={() => setTab("tests")} />}
       {tab === "routine" && <DailyRoutineTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "weeklyRoutine" && <WeeklyRoutineTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "homework" && <HomeworkTab data={data} setData={setData} patchData={patchData} scopeClassGroups={teacher.classGroups} />}
@@ -4339,6 +4375,28 @@ function App() {
     });
     if (changed) setData({ ...data, alerts });
   }, [loading, data.homeworks, data.students]);
+
+  // 오늘이 재시험 날짜인 시험은, "오늘 할 일" 체크리스트에 TEST 항목으로 자동 표시 (해결되면 자동으로 사라짐)
+  useEffect(() => {
+    if (loading) return;
+    const today = todayStr();
+    const tasks = data.dailyTasks || [];
+    const todayRetests = data.tests.filter(t => t.retest && t.retestDate === today);
+    let next = tasks;
+    let changed = false;
+    todayRetests.forEach(t => {
+      const taskId = `retest-${t.id}`;
+      if (!next.find(x => x.id === taskId)) {
+        const student = data.students.find(s => s.id === t.studentId);
+        next = [...next, { id: taskId, type: "TEST", label: `${student?.name || ""} 재시험 · ${t.name}`, time: "", done: false }];
+        changed = true;
+      }
+    });
+    const validIds = new Set(todayRetests.map(t => `retest-${t.id}`));
+    const filtered = next.filter(x => !String(x.id).startsWith("retest-") || validIds.has(x.id));
+    if (filtered.length !== next.length) { next = filtered; changed = true; }
+    if (changed) setData({ ...data, dailyTasks: next });
+  }, [loading, data.tests, data.students]);
 
   useEffect(() => {
     if (document.getElementById("routine-font-link")) return;
