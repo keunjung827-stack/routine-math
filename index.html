@@ -73,7 +73,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-103";
+const APP_VERSION = "2026-09-14-105";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -142,6 +142,8 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
 
 
 
@@ -3970,12 +3972,41 @@ const STUDENT_TABS = [
   { id: "timetable", label: "자습실", icon: Armchair },
   { id: "sessions", label: "보강·클리닉", icon: Repeat },
   { id: "notices", label: "공지", icon: Bell },
+  { id: "retest", label: "재시험", icon: FlaskConical },
   { id: "messages", label: "문의", icon: MessageSquare },
   { id: "routine", label: "루틴체크", icon: Users2 },
   { id: "rules", label: "학원규정", icon: FileText },
 ];
 
-// 학생: 공지 (재시험 필요 등 확인이 필요한 항목들을 모아 보여줌)
+// 학생: 재시험 안내
+function StudentRetestTab({ data, studentId }) {
+  const retestTests = data.tests.filter(t => t.studentId === studentId && t.retest).sort((a, b) => b.date.localeCompare(a.date));
+  return (
+    <div className="rounded-2xl p-4" style={panel}>
+      <h3 className="font-bold mb-3 flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}><FlaskConical size={18} color="var(--gold)" />재시험 안내</h3>
+      {retestTests.length === 0 ? (
+        <div className="rounded-lg p-4 flex items-center gap-2" style={{ background: "#efe6d0" }}>
+          <Check size={18} color="#4c8c5f" />
+          <span className="text-sm font-semibold" style={{ color: "#2b2417" }}>현재 재시험 대상이 없어요.</span>
+        </div>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {retestTests.map(t => (
+            <li key={t.id} className="p-3 rounded-lg flex flex-col gap-1" style={{ background: "#f8e3c9" }}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold" style={{ color: "#2b2417" }}>{t.name}</span>
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "var(--coral)", color: "#fff" }}>재시험 필요</span>
+              </div>
+              <span className="text-xs" style={{ color: "#7a6f52" }}>{t.date} · {t.score}점 (기준 {t.passLine}점){t.retestDate ? ` · 재시험일 ${t.retestDate}` : ""}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// 학생: 공지 (학원 휴원, 학교 시험 등 일반 공지)
 // ================= ADMIN: 공지사항 관리 (휴원 등, 학생 공지 탭에 표시) =================
 function AnnouncementsTab({ data, setData }) {
   const [title, setTitle] = useState("");
@@ -4023,44 +4054,25 @@ function AnnouncementsTab({ data, setData }) {
 }
 
 function StudentNoticesTab({ data, studentId }) {
-  const retestTests = data.tests.filter(t => t.studentId === studentId && t.retest).sort((a, b) => b.date.localeCompare(a.date));
   const student = data.students.find(s => s.id === studentId);
   const myAnnouncements = (data.announcements || []).filter(a => a.target === "ALL" || a.target === student?.grade).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   return (
-    <div className="flex flex-col gap-4">
-      {myAnnouncements.length > 0 && (
-        <div className="rounded-2xl p-4" style={panel}>
-          <h3 className="font-bold mb-3 flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}><Bell size={18} color="var(--gold)" />공지사항</h3>
-          <ul className="flex flex-col gap-2">
-            {myAnnouncements.map(a => (
-              <li key={a.id} className="p-3 rounded-lg flex flex-col gap-1" style={{ background: "#efe6d0" }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold" style={{ color: "#2b2417" }}>{a.title}</span>
-                  {a.date && <span className="text-xs font-bold flex-shrink-0" style={{ color: "var(--gold)" }}>{a.date}</span>}
-                </div>
-                {a.message && <p className="text-xs" style={{ color: "#7a6f52", whiteSpace: "pre-line" }}>{a.message}</p>}
-              </li>
-            ))}
-          </ul>
-        </div>
+    <div className="rounded-2xl p-4" style={panel}>
+      <h3 className="font-bold mb-3 flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}><Bell size={18} color="var(--gold)" />공지사항</h3>
+      {myAnnouncements.length === 0 ? <EmptyState text="등록된 공지사항이 없습니다." /> : (
+        <ul className="flex flex-col gap-2">
+          {myAnnouncements.map(a => (
+            <li key={a.id} className="p-3 rounded-lg flex flex-col gap-1" style={{ background: "#efe6d0" }}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold" style={{ color: "#2b2417" }}>{a.title}</span>
+                {a.date && <span className="text-xs font-bold flex-shrink-0" style={{ color: "var(--gold)" }}>{a.date}</span>}
+              </div>
+              {a.message && <p className="text-xs" style={{ color: "#7a6f52", whiteSpace: "pre-line" }}>{a.message}</p>}
+            </li>
+          ))}
+        </ul>
       )}
-      <div className="rounded-2xl p-4" style={panel}>
-        <h3 className="font-bold mb-3 flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}><Bell size={18} color="var(--gold)" />재시험 안내</h3>
-        {retestTests.length === 0 ? <EmptyState text="현재 재시험 대상이 없습니다." /> : (
-          <ul className="flex flex-col gap-2">
-            {retestTests.map(t => (
-              <li key={t.id} className="p-3 rounded-lg flex flex-col gap-1" style={{ background: "#f8e3c9" }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold" style={{ color: "#2b2417" }}>{t.name}</span>
-                  <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "var(--coral)", color: "#fff" }}>재시험 필요</span>
-                </div>
-                <span className="text-xs" style={{ color: "#7a6f52" }}>{t.date} · {t.score}점 (기준 {t.passLine}점){t.retestDate ? ` · 재시험일 ${t.retestDate}` : ""}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </div>
   );
 }
@@ -4130,7 +4142,31 @@ function StudentHome({ data, setData, studentId, onLogout }) {
   const seenVideoIds = new Set(student?.seenVideoIds || []);
   const newVideoCount = data.videos.filter(v => (v.target === "ALL" || v.target === student?.grade) && !seenVideoIds.has(v.id)).length;
   const upcomingSessionCount = data.sessions.filter(s => s.studentId === studentId && s.status === "예정" && s.date >= todayStr()).length;
-  const noticeCount = data.tests.filter(t => t.studentId === studentId && t.retest).length;
+  const retestTests = data.tests.filter(t => t.studentId === studentId && t.retest);
+  const noticeCount = (data.announcements || []).filter(a => a.target === "ALL" || a.target === student?.grade).length;
+
+  // 선생님이 새로 "확인"한 숙제·플래너를 로그인 직후 눈에 띄게 알려주고, 한 번 보면 다시 안 뜨게 표시
+  const seenHw = new Set(student?.seenReviewedHomeworkIds || []);
+  const seenPlanner = new Set(student?.seenReviewedPlannerDates || []);
+  const newReviewedHw = data.homeworks.filter(h => h.studentId === studentId && h.reviewedByStaff && !seenHw.has(h.id));
+  const newReviewedPlanner = (data.plannerChecks || []).filter(c => c.studentId === studentId && !seenPlanner.has(c.date));
+  const hasNewReview = newReviewedHw.length > 0 || newReviewedPlanner.length > 0;
+  useEffect(() => {
+    if (!hasNewReview) return;
+    const t = setTimeout(() => {
+      setData({
+        ...data,
+        students: data.students.map(s => s.id === studentId ? {
+          ...s,
+          seenReviewedHomeworkIds: [...(s.seenReviewedHomeworkIds || []), ...newReviewedHw.map(h => h.id)],
+          seenReviewedPlannerDates: [...(s.seenReviewedPlannerDates || []), ...newReviewedPlanner.map(c => c.date)],
+        } : s),
+      });
+    }, 4000); // 몇 초 보여준 뒤 확인 처리
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasNewReview]);
+
   return (
     <div className="min-h-screen px-5 pb-6" style={{ background: "#f6f1e4", paddingTop: "max(24px, calc(env(safe-area-inset-top) + 16px))" }}>
       <div className="flex items-center justify-between mb-4">
@@ -4140,10 +4176,24 @@ function StudentHome({ data, setData, studentId, onLogout }) {
         </div>
         <button onClick={onLogout} className="p-2 rounded-lg" style={{ border: "1px solid #ddcda0" }}><LogOut size={16} color="#7a6f52" /></button>
       </div>
+      {hasNewReview && (
+        <div className="rounded-2xl p-3 mb-4 flex flex-col gap-1.5" style={{ background: "#fde3c8", border: "2px solid #b3261e" }}>
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize: 22 }}>🔥</span>
+            <span className="text-sm font-bold" style={{ color: "#b3261e" }}>선생님이 확인했어요!</span>
+          </div>
+          {newReviewedHw.length > 0 && (
+            <p className="text-xs" style={{ color: "#8a3a1e" }}>숙제: {newReviewedHw.map(h => `${h.title} (${h.date})`).join(", ")}</p>
+          )}
+          {newReviewedPlanner.length > 0 && (
+            <p className="text-xs" style={{ color: "#8a3a1e" }}>플래너: {newReviewedPlanner.map(c => c.date).join(", ")}</p>
+          )}
+        </div>
+      )}
       <div className="flex gap-2 mb-4 flex-wrap">
         {STUDENT_TABS.map(t => {
           const Icon = t.icon; const active = tab === t.id;
-          const badge = t.id === "classroom" ? newVideoCount : (t.id === "sessions" ? upcomingSessionCount : (t.id === "notices" ? noticeCount : 0));
+          const badge = t.id === "classroom" ? newVideoCount : (t.id === "sessions" ? upcomingSessionCount : (t.id === "notices" ? noticeCount : (t.id === "retest" ? retestTests.length : 0)));
           return (
             <button key={t.id} onClick={() => setTab(t.id)} className="relative flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl min-w-[60px]"
               style={{ background: active ? "#efe3c8" : "transparent", border: `1px solid ${active ? "var(--gold)" : "#e4d8ba"}` }}>
@@ -4166,6 +4216,7 @@ function StudentHome({ data, setData, studentId, onLogout }) {
       )}
       {tab === "sessions" && <StudentSessionsView data={data} studentId={studentId} />}
       {tab === "notices" && <StudentNoticesTab data={data} studentId={studentId} />}
+      {tab === "retest" && <StudentRetestTab data={data} studentId={studentId} />}
       {tab === "messages" && <StudentMessagesTab data={data} setData={setData} studentId={studentId} />}
       {tab === "routine" && <StudentRoutineCheck data={data} setData={setData} studentId={studentId} canEdit={false} />}
       {tab === "rules" && (
