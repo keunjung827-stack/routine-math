@@ -73,7 +73,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-95";
+const APP_VERSION = "2026-09-14-96";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -142,6 +142,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -1931,15 +1932,13 @@ function AlertsTab({ data, setData }) {
   const [copiedId, setCopiedId] = useState(null);
   const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
   const studentPhone = (id) => data.students.find(s => s.id === id)?.parentPhone;
-  const markSent = (id) => setData({ ...data, alerts: data.alerts.map(a => a.id === id ? { ...a, status: "발송완료" } : a) });
+  const markSent = (id) => setData({ ...data, alerts: data.alerts.map(a => a.id === id ? { ...a, status: "삭제됨" } : a) });
   const remove = (id) => setData({ ...data, alerts: data.alerts.map(a => a.id === id ? { ...a, status: "삭제됨" } : a) });
-  const removeAllSent = () => { const count = data.alerts.filter(a => a.status === "발송완료").length; if (count > 0 && window.confirm(`발송 완료된 알림 ${count}건을 모두 삭제할까요?`)) setData({ ...data, alerts: data.alerts.map(a => a.status === "발송완료" ? { ...a, status: "삭제됨" } : a) }); };
   const copy = async (a) => { try { await navigator.clipboard.writeText(a.message); setCopiedId(a.id); setTimeout(() => setCopiedId(null), 1500); } catch (e) {} };
   const pending = data.alerts.filter(a => a.status === "대기").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const sent = data.alerts.filter(a => a.status === "발송완료").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const Row = ({ a }) => (
-    <li className="flex flex-col gap-2 p-3 rounded-lg" style={{ background: a.status === "대기" ? "#f8e3c9" : "#efe6d0" }}>
+    <li className="flex flex-col gap-2 p-3 rounded-lg" style={{ background: "#f8e3c9" }}>
       <div className="flex items-center justify-between">
         <div className="text-sm" style={{ color: "#4a4332" }}>
           <b style={{ color: "#2b2417" }}>{studentName(a.studentId)}</b>
@@ -1948,7 +1947,7 @@ function AlertsTab({ data, setData }) {
         </div>
         <div className="flex gap-1.5">
           <button onClick={() => copy(a)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}>{copiedId === a.id ? <Check size={13} color="#4c8c5f" /> : <Copy size={13} color="#5c543e" />}</button>
-          {a.status === "대기" && <button onClick={() => markSent(a.id)} className="px-2 py-1 rounded-md text-xs font-semibold" style={{ background: "#4c8c5f", color: "#fff" }}>발송완료</button>}
+          <button onClick={() => markSent(a.id)} className="px-2 py-1 rounded-md text-xs font-semibold" style={{ background: "#4c8c5f", color: "#fff" }}>발송완료</button>
           <button onClick={() => remove(a.id)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
         </div>
       </div>
@@ -1961,16 +1960,7 @@ function AlertsTab({ data, setData }) {
       <div className="rounded-2xl p-4" style={panel}>
         <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>발송 대기 ({pending.length})</h3>
         {pending.length === 0 ? <EmptyState text="대기중인 알림이 없습니다." /> : <ul className="flex flex-col gap-2">{pending.map(a => <Row key={a.id} a={a} />)}</ul>}
-        <p className="text-[11px] mt-3" style={{ color: "#8a7f5e" }}>복사 버튼으로 메시지를 문자·카카오톡에 붙여넣어 보낼 수 있습니다.</p>
-      </div>
-      <div className="rounded-2xl p-4" style={panel}>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>발송 완료 ({sent.length})</h3>
-          {sent.length > 0 && (
-            <button onClick={removeAllSent} className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: "#efe3c8", color: "var(--coral)" }}><Trash2 size={12} />일괄삭제</button>
-          )}
-        </div>
-        {sent.length === 0 ? <EmptyState text="발송 완료된 알림이 없습니다." /> : <ul className="flex flex-col gap-2">{sent.map(a => <Row key={a.id} a={a} />)}</ul>}
+        <p className="text-[11px] mt-3" style={{ color: "#8a7f5e" }}>복사 버튼으로 메시지를 문자·카카오톡에 붙여넣어 보낼 수 있습니다. "발송완료"를 누르면 목록에서 바로 사라져요.</p>
       </div>
     </div>
   );
