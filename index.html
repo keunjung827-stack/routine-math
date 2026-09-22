@@ -49,6 +49,12 @@
     var reason = e.reason;
     showError('오류가 발생했어요 (Promise)', (reason && reason.stack) ? reason.stack : String(reason));
   });
+  window.__appMounted = false;
+  setTimeout(function () {
+    if (!window.__appMounted) {
+      showError('불러오는 데 시간이 너무 오래 걸려요', '네트워크 상태를 확인하고 다시 시도해주세요. (필요한 파일을 받아오지 못했어요)');
+    }
+  }, 15000);
 </script>
 
 <script type="text/babel" data-type="module" data-presets="react">
@@ -73,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-106";
+const APP_VERSION = "2026-09-14-107";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -142,6 +148,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -4410,6 +4417,7 @@ function App() {
 
 try {
   ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  window.__appMounted = true;
 } catch (e) {
   window.showError("앱 실행 중 오류", (e && e.stack) ? e.stack : String(e));
 }
