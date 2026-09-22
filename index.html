@@ -36,7 +36,10 @@
       root.innerHTML =
         '<div style="padding:20px;font-family:-apple-system,monospace;white-space:pre-wrap;word-break:break-word;color:#b91c1c;background:#fff;line-height:1.5;">' +
         '<div style="font-weight:bold;font-size:16px;margin-bottom:10px;">⚠️ ' + title + '</div>' +
-        '<div style="font-size:13px;">' + detail + '</div></div>';
+        '<div style="font-size:13px;margin-bottom:16px;">불러오는 중 문제가 생겼어요. 대부분 네트워크 문제라 다시 시도하면 해결돼요.</div>' +
+        '<button onclick="location.reload()" style="width:100%;padding:14px;border-radius:10px;border:none;background:#b91c1c;color:#fff;font-size:15px;font-weight:bold;font-family:inherit;">다시 시도</button>' +
+        '<div style="font-size:11px;margin-top:16px;color:#7a6f52;">계속 안 되면 홈 화면 아이콘을 삭제 후 다시 추가해보세요.</div>' +
+        '<div style="font-size:10px;margin-top:12px;color:#a3a3a3;">' + detail + '</div></div>';
     }
   }
   window.addEventListener('error', function (e) {
@@ -70,7 +73,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-88";
+const APP_VERSION = "2026-09-14-89";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -139,6 +142,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
