@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-118";
+const APP_VERSION = "2026-09-14-119";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -273,6 +273,7 @@ window.storage = {
 
 
 
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const APP_ICON_DATA_URL = "";
 
@@ -285,7 +286,7 @@ const CLASS_TRACKS = ["코어", "피크", "슈프림"];
 const CLASS_GROUPS = ["중1", "중2", "중3", "고1", "고2"].flatMap(g => CLASS_TRACKS.map(t => `${g}-${t}`));
 const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
 const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
-const TEST_TYPES = ["주간테스트", "월말테스트", "누적테스트", "일일테스트"];
+const TEST_TYPES = ["주간테스트", "월말테스트", "누적테스트"];
 const ATT_STATUSES = ["출석", "지각", "결석"];
 const ROUTINE_ITEM_DEFS = [
   { key: "class", label: "진도수업", kind: "choice", options: [{ value: "N", label: "새로 배움" }, { value: "R", label: "복습 중" }, { value: "D", label: "다시 진행 (재학습)" }], unit: "" },
