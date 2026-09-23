@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-110";
+const APP_VERSION = "2026-09-14-111";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -148,6 +148,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -4397,6 +4398,33 @@ function App() {
     if (filtered.length !== next.length) { next = filtered; changed = true; }
     if (changed) setData({ ...data, dailyTasks: next });
   }, [loading, data.tests, data.students]);
+
+  // 오늘 출석/지각 체크된 학생은 "오늘 할 일" 체크리스트에 등원 항목으로 자동 표시 (시각 포함, 완료 처리됨)
+  useEffect(() => {
+    if (loading) return;
+    const today = todayStr();
+    const tasks = data.dailyTasks || [];
+    const todayArrivals = data.attendance.filter(a => a.date === today && (a.status === "출석" || a.status === "지각"));
+    let next = tasks;
+    let changed = false;
+    todayArrivals.forEach(a => {
+      const taskId = `attend-${a.id}`;
+      const existing = next.find(x => x.id === taskId);
+      const student = data.students.find(s => s.id === a.studentId);
+      const label = `${student?.name || ""} 등원${a.status === "지각" ? " (지각)" : ""}`;
+      if (!existing) {
+        next = [...next, { id: taskId, type: "등원", label, time: a.time || "", done: true }];
+        changed = true;
+      } else if (existing.label !== label) {
+        next = next.map(x => x.id === taskId ? { ...x, label, time: a.time || "" } : x);
+        changed = true;
+      }
+    });
+    const validIds = new Set(todayArrivals.map(a => `attend-${a.id}`));
+    const filtered = next.filter(x => !String(x.id).startsWith("attend-") || validIds.has(x.id));
+    if (filtered.length !== next.length) { next = filtered; changed = true; }
+    if (changed) setData({ ...data, dailyTasks: next });
+  }, [loading, data.attendance, data.students]);
 
   useEffect(() => {
     if (document.getElementById("routine-font-link")) return;
