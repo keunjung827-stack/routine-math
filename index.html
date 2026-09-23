@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-115";
+const APP_VERSION = "2026-09-14-117";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -148,6 +148,8 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
 
 
 
@@ -1262,11 +1264,8 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
     if (!studentId) return;
     const student = data.students.find(s => s.id === studentId);
     const hwSummary = todaysHomeworks.map(h => {
-      const photoCount = (h.photos || (h.photo ? [h.photo] : [])).length;
-      const dueRef = h.dueDate || h.date;
-      if (!h.submitted) return `• ${h.title} (${dueRef} 기한) : 미제출`;
-      const timeStr = h.submittedAt ? new Date(h.submittedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
-      return `• ${h.title} (${dueRef} 기한) : ${h.submittedLate ? "기한초과 제출" : "제출"} ${timeStr}${photoCount > 0 ? ` · 질문 ${photoCount}개` : ""}`;
+      if (!h.submitted) return `• ${h.title} : 미제출`;
+      return `• ${h.title} : ${h.submittedLate ? "기한초과 제출" : "제출"}`;
     }).join("\n");
     const hwAutoStatus = todaysHomeworks.length === 0 ? null :
       todaysHomeworks.some(h => !h.submitted) ? "미제출" :
@@ -1639,10 +1638,10 @@ function conceptUnderstandingRate(data, studentId, monthStr) {
 }
 
 function dailyTestStatsForMonth(data, studentId, monthStr) {
-  const tests = data.tests.filter(t => t.studentId === studentId && t.date.slice(0, 7) === monthStr && (t.type === "일일테스트" || t.type === "주간테스트"));
-  const dailyCount = tests.filter(t => t.type === "일일테스트").length;
-  const avg = tests.length > 0 ? Math.round(tests.reduce((s, t) => s + t.score, 0) / tests.length) : null;
-  return { dailyCount, avg };
+  const allTests = data.tests.filter(t => t.studentId === studentId && t.date.slice(0, 7) === monthStr);
+  const avgTests = allTests.filter(t => t.type === "일일테스트" || t.type === "주간테스트");
+  const avg = avgTests.length > 0 ? Math.round(avgTests.reduce((s, t) => s + t.score, 0) / avgTests.length) : null;
+  return { totalCount: allTests.length, avg };
 }
 
 function formalTestComparison(data, studentId, type, monthStr) {
@@ -1729,7 +1728,7 @@ function MonthlyReportView({ data, setData, studentId, month, editable }) {
 
       <div className="grid grid-cols-3 gap-2">
         <div className="rounded-xl p-3 text-center" style={panel}><div className="text-xl font-bold" style={{ color: "var(--gold)", fontFamily: "'Noto Serif KR', serif" }}>{progressRate === null ? "-" : `${progressRate}%`}</div><div className="text-[10.5px] mt-0.5" style={{ color: "#7a6f52" }}>진도 계획 실행률</div></div>
-        <div className="rounded-xl p-3 text-center" style={panel}><div className="text-xl font-bold" style={{ color: "var(--gold)", fontFamily: "'Noto Serif KR', serif" }}>{dailyStats.dailyCount}회</div><div className="text-[10.5px] mt-0.5" style={{ color: "#7a6f52" }}>데일리테스트 응시</div></div>
+        <div className="rounded-xl p-3 text-center" style={panel}><div className="text-xl font-bold" style={{ color: "var(--gold)", fontFamily: "'Noto Serif KR', serif" }}>{dailyStats.totalCount}회</div><div className="text-[10.5px] mt-0.5" style={{ color: "#7a6f52" }}>전체 테스트 응시</div></div>
         <div className="rounded-xl p-3 text-center" style={panel}><div className="text-xl font-bold" style={{ color: "var(--gold)", fontFamily: "'Noto Serif KR', serif" }}>{dailyStats.avg === null ? "-" : `${dailyStats.avg}점`}</div><div className="text-[10.5px] mt-0.5" style={{ color: "#7a6f52" }}>테스트 평균</div></div>
       </div>
 
