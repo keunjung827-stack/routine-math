@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-111";
+const APP_VERSION = "2026-09-14-115";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -148,6 +148,10 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
+
+
+
 
 
 
@@ -408,6 +412,7 @@ const emptyData = () => ({
   plannerChecks: [],
   timerDrafts: {},
   announcements: [],
+  monthlyReports: {},
 });
 
 function useAppData() {
@@ -1593,6 +1598,266 @@ function monthlyHomeworkSubmitRate(data, studentId, monthStr) {
   if (hws.length === 0) return null;
   const onTime = hws.filter(h => h.submitted && !h.submittedLate).length;
   return Math.round((onTime / hws.length) * 100);
+}
+
+// ===== 월간 리포트 계산 헬퍼 =====
+function assignedTeacherName(data, classGroup) {
+  const t = data.teachers.find(t => (t.classGroups || []).includes(classGroup));
+  return t?.name || "원장";
+}
+
+function attendanceStatsForMonth(data, studentId, monthStr) {
+  const records = data.attendance.filter(a => a.studentId === studentId && a.date.slice(0, 7) === monthStr);
+  const present = records.filter(a => a.status === "출석").length;
+  const late = records.filter(a => a.status === "지각").length;
+  const absent = records.filter(a => a.status === "결석").length;
+  const total = present + late + absent;
+  const rate = total > 0 ? Math.round(((present + late) / total) * 100) : null;
+  return { present, late, absent, total, rate };
+}
+
+function progressExecutionRate(data, studentId, monthStr) {
+  const monthRoutines = data.routines.filter(r => r.studentId === studentId && r.date.slice(0, 7) === monthStr);
+  if (monthRoutines.length === 0) return null;
+  const withProgress = monthRoutines.filter(r => {
+    const classItem = (r.items || []).find(it => it.key === "class");
+    return classItem && (classItem.result === "N" || classItem.result === "R");
+  }).length;
+  return Math.round((withProgress / monthRoutines.length) * 100);
+}
+
+function conceptUnderstandingRate(data, studentId, monthStr) {
+  const monthRoutines = data.routines.filter(r => r.studentId === studentId && r.date.slice(0, 7) === monthStr);
+  let p = 0, c = 0;
+  monthRoutines.forEach(r => {
+    const reviewItem = (r.items || []).find(it => it.key === "review");
+    if (reviewItem?.result === "P") p++;
+    else if (reviewItem?.result === "C") c++;
+  });
+  if (p + c === 0) return null;
+  return Math.round((c / (p + c)) * 100);
+}
+
+function dailyTestStatsForMonth(data, studentId, monthStr) {
+  const tests = data.tests.filter(t => t.studentId === studentId && t.date.slice(0, 7) === monthStr && (t.type === "일일테스트" || t.type === "주간테스트"));
+  const dailyCount = tests.filter(t => t.type === "일일테스트").length;
+  const avg = tests.length > 0 ? Math.round(tests.reduce((s, t) => s + t.score, 0) / tests.length) : null;
+  return { dailyCount, avg };
+}
+
+function formalTestComparison(data, studentId, type, monthStr) {
+  const monthEnd = `${monthStr}-31`;
+  const list = data.tests.filter(t => t.studentId === studentId && t.type === type && t.date <= monthEnd).sort((a, b) => b.date.localeCompare(a.date));
+  return { current: list[0] || null, previous: list[1] || null };
+}
+
+function allTestsTrendForMonth(data, studentId, monthStr) {
+  return data.tests.filter(t => t.studentId === studentId && t.date.slice(0, 7) === monthStr).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function TestTrendChart({ trend }) {
+  if (trend.length < 2) return <p className="text-xs" style={{ color: "#7a6f52" }}>점수 추이를 그리려면 이번 달 테스트가 2건 이상 필요해요.</p>;
+  const w = 600, h = 160, padL = 26, padR = 14, padT = 20, padB = 22;
+  const xStep = (w - padL - padR) / (trend.length - 1);
+  const yFor = (score) => padT + (1 - Math.max(0, Math.min(100, score)) / 100) * (h - padT - padB);
+  const points = trend.map((t, i) => `${padL + i * xStep},${yFor(t.score)}`).join(" ");
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h}>
+      <line x1={padL} y1={padT} x2={padL} y2={h - padB} stroke="#e4d8ba" />
+      <line x1={padL} y1={h - padB} x2={w - padR} y2={h - padB} stroke="#e4d8ba" />
+      <polyline points={points} fill="none" stroke="var(--gold)" strokeWidth="2.5" />
+      {trend.map((t, i) => (
+        <g key={t.id || i}>
+          <circle cx={padL + i * xStep} cy={yFor(t.score)} r="4" fill="var(--gold)" />
+          <text x={padL + i * xStep} y={yFor(t.score) - 9} fontSize="10" fill="#b3611b" textAnchor="middle" fontFamily="'Noto Sans KR', sans-serif">{t.score}</text>
+          <text x={padL + i * xStep} y={h - 5} fontSize="9" fill="#7a6f52" textAnchor="middle" fontFamily="'Noto Sans KR', sans-serif">{t.date.slice(5)}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function MonthlyReportView({ data, setData, studentId, month, editable }) {
+  const student = data.students.find(s => s.id === studentId);
+  const key = `${studentId}:${month}`;
+  const manual = (data.monthlyReports || {})[key] || {};
+  const updateManual = (field, value) => setData({ ...data, monthlyReports: { ...(data.monthlyReports || {}), [key]: { ...manual, [field]: value } } });
+
+  const plannerRate = monthlyPlannerTaskRate(data, studentId, month);
+  const progressRate = progressExecutionRate(data, studentId, month);
+  const conceptRate = conceptUnderstandingRate(data, studentId, month);
+  const { avgAccuracy } = monthlyRoutineStats(data, studentId, month);
+  const hwRate = monthlyHomeworkSubmitRate(data, studentId, month);
+  const att = attendanceStatsForMonth(data, studentId, month);
+  const dailyStats = dailyTestStatsForMonth(data, studentId, month);
+  const monthlyTestComp = formalTestComparison(data, studentId, "월말테스트", month);
+  const cumulativeTestComp = formalTestComparison(data, studentId, "누적테스트", month);
+  const trend = allTestsTrendForMonth(data, studentId, month);
+  const teacherName = assignedTeacherName(data, student?.classGroup);
+  const studyMinutes = monthlyStudyMinutes(data, studentId, month);
+  const monthRoutinesForTable = data.routines.filter(r => r.studentId === studentId && r.date.slice(0, 7) === month).sort((a, b) => a.date.localeCompare(b.date));
+  const [, mm] = month.split("-");
+
+  const ManualField = ({ label, field, placeholder, multiline }) => (
+    <div>
+      <div className="text-xs mb-1" style={{ color: "#7a6f52" }}>{label}</div>
+      {editable ? (
+        multiline ? (
+          <textarea className="w-full rounded-lg px-2 py-1.5 text-sm" style={{ ...inputStyle, minHeight: 54 }} value={manual[field] || ""} onChange={e => updateManual(field, e.target.value)} placeholder={placeholder} />
+        ) : (
+          <input className="w-full rounded-lg px-2 py-1.5 text-sm" style={inputStyle} value={manual[field] || ""} onChange={e => updateManual(field, e.target.value)} placeholder={placeholder} />
+        )
+      ) : (
+        <div className="text-sm" style={{ color: "#2b2417", whiteSpace: "pre-line" }}>{manual[field] || "-"}</div>
+      )}
+    </div>
+  );
+
+  return (
+    <div id="print-area" className="flex flex-col gap-4">
+      <div className="rounded-2xl p-6" style={{ background: "linear-gradient(180deg, #173226, #204233)", color: "#f4efe1" }}>
+        <div className="text-sm font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>루틴수학<span style={{ color: "var(--gold)" }}>학원</span></div>
+        <div className="text-[10px] mt-1 tracking-wide" style={{ color: "#b9c9bd" }}>최고의 경쟁력은 습관이다</div>
+        <div className="text-xl font-bold mt-5 leading-snug" style={{ fontFamily: "'Noto Serif KR', serif" }}>{student?.name || ""} 학생의 {Number(mm)}월 학습 리포트</div>
+        <div className="text-xs mt-1.5" style={{ color: "#cddccf" }}>{student?.grade} · {student?.classGroup || "미배정"} · 담당 강사 {teacherName}</div>
+        <div className="flex gap-6 mt-5 pt-4 flex-wrap" style={{ borderTop: "1px solid rgba(244,239,225,0.16)" }}>
+          <div><div className="text-[10px]" style={{ color: "#a9bcae" }}>플래너 실제 달성률</div><div className="text-base font-bold">{plannerRate === null ? "-" : `${plannerRate}%`}</div></div>
+          <div><div className="text-[10px]" style={{ color: "#a9bcae" }}>숙제 기한 내 제출률</div><div className="text-base font-bold">{hwRate === null ? "-" : `${hwRate}%`}</div></div>
+          <div><div className="text-[10px]" style={{ color: "#a9bcae" }}>총 순공시간</div><div className="text-base font-bold">{formatMinutes(studyMinutes)}</div></div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-xl p-3 text-center" style={panel}><div className="text-xl font-bold" style={{ color: "var(--gold)", fontFamily: "'Noto Serif KR', serif" }}>{progressRate === null ? "-" : `${progressRate}%`}</div><div className="text-[10.5px] mt-0.5" style={{ color: "#7a6f52" }}>진도 계획 실행률</div></div>
+        <div className="rounded-xl p-3 text-center" style={panel}><div className="text-xl font-bold" style={{ color: "var(--gold)", fontFamily: "'Noto Serif KR', serif" }}>{dailyStats.dailyCount}회</div><div className="text-[10.5px] mt-0.5" style={{ color: "#7a6f52" }}>데일리테스트 응시</div></div>
+        <div className="rounded-xl p-3 text-center" style={panel}><div className="text-xl font-bold" style={{ color: "var(--gold)", fontFamily: "'Noto Serif KR', serif" }}>{dailyStats.avg === null ? "-" : `${dailyStats.avg}점`}</div><div className="text-[10.5px] mt-0.5" style={{ color: "#7a6f52" }}>테스트 평균</div></div>
+      </div>
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif", color: "#173226" }}>이달의 학습 현황</h3>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <ManualField label="이번 달 진도" field="progress" placeholder="예: 이차방정식과 이차함수" />
+          <ManualField label="사용 교재" field="textbook" placeholder="예: 개념플러스유형, 쎈" />
+        </div>
+        <div style={{ borderTop: "1px solid #e4d8ba", paddingTop: 12 }}>
+          {[["개념 이해", conceptRate], ["문제 풀이력", avgAccuracy], ["숙제 성실도", hwRate], ["출석률", att.rate]].map(([label, val]) => (
+            <div key={label} className="flex items-center gap-2 mb-2.5">
+              <span className="text-xs w-16 flex-shrink-0" style={{ color: "#2b2417" }}>{label}</span>
+              <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: "#e4d8ba" }}>
+                <div className="h-full rounded-full" style={{ width: `${val || 0}%`, background: "var(--gold)" }} />
+              </div>
+              <span className="text-xs font-bold w-9 text-right flex-shrink-0" style={{ color: "var(--gold)" }}>{val === null ? "-" : val}</span>
+            </div>
+          ))}
+          <p className="text-[11px] mt-1" style={{ color: "#7a6f52" }}>출석 {att.present}회 · 지각 {att.late}회 · 결석 {att.absent}회</p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif", color: "#173226" }}>월말·누적테스트 분석</h3>
+        {[["월말테스트", monthlyTestComp], ["누적테스트", cumulativeTestComp]].map(([label, comp], i) => (
+          <div key={label} style={i > 0 ? { borderTop: "1px solid #e4d8ba", marginTop: 12, paddingTop: 12 } : {}}>
+            <div className="text-xs mb-2" style={{ color: "#7a6f52" }}>{label}</div>
+            <div className="flex gap-2">
+              <div className="flex-1 text-center rounded-lg p-2.5" style={{ background: "#f6f1e4" }}><div className="text-[10px]" style={{ color: "#7a6f52" }}>이번 시험</div><div className="text-lg font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>{comp.current ? `${comp.current.score}점` : "기록없음"}</div></div>
+              <div className="flex-1 text-center rounded-lg p-2.5" style={{ background: "#f6f1e4" }}><div className="text-[10px]" style={{ color: "#7a6f52" }}>이전 시험</div><div className="text-lg font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>{comp.previous ? `${comp.previous.score}점` : "기록없음"}</div></div>
+            </div>
+          </div>
+        ))}
+        <div className="grid grid-cols-2 gap-3 mt-3" style={{ borderTop: "1px solid #e4d8ba", paddingTop: 12 }}>
+          <ManualField label="잘한 부분" field="testGood" placeholder="이번 달 시험에서 잘한 점" multiline />
+          <ManualField label="보완할 부분" field="testImprove" placeholder="더 연습이 필요한 부분" multiline />
+        </div>
+      </div>
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif", color: "#173226" }}>선생님 코멘트</h3>
+        {editable ? (
+          <textarea className="w-full rounded-lg px-3 py-2 text-sm" style={{ ...inputStyle, minHeight: 90 }} value={manual.comment || ""} onChange={e => updateManual("comment", e.target.value)} placeholder="이번 달 학생에 대한 코멘트를 적어주세요" />
+        ) : (
+          <div className="rounded-lg p-4 text-sm" style={{ background: "#fdf6ea", borderLeft: "4px solid var(--gold)", lineHeight: 1.75, whiteSpace: "pre-line" }}>{manual.comment || "아직 작성된 코멘트가 없습니다."}</div>
+        )}
+      </div>
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif", color: "#173226" }}>수업 상세 기록</h3>
+        {monthRoutinesForTable.length === 0 ? <EmptyState text="이번 달 오늘의 루틴 기록이 없습니다." /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+              <thead><tr>{["날짜", "수업 내용", "숙제", "테스트"].map(h => <th key={h} className="text-left pb-2 pr-2" style={{ color: "#7a6f52", borderBottom: "2px solid #e4d8ba" }}>{h}</th>)}</tr></thead>
+              <tbody>
+                {monthRoutinesForTable.map(r => {
+                  const classItem = (r.items || []).find(it => it.key === "class");
+                  const reviewItem = (r.items || []).find(it => it.key === "review");
+                  const hwItem = (r.items || []).find(it => it.key === "homework");
+                  const noteParts = [classItem?.note, reviewItem?.note].filter(Boolean);
+                  return (
+                    <tr key={r.id}>
+                      <td className="py-2 pr-2 whitespace-nowrap" style={{ color: "#7a6f52", borderBottom: "1px solid #e4d8ba" }}>{r.date}</td>
+                      <td className="py-2 pr-2" style={{ borderBottom: "1px solid #e4d8ba" }}>{noteParts.join(" · ") || "-"}</td>
+                      <td className="py-2 pr-2" style={{ color: "#7a6f52", borderBottom: "1px solid #e4d8ba" }}>{hwItem?.note || "-"}</td>
+                      <td className="py-2 font-bold whitespace-nowrap" style={{ color: "var(--gold)", borderBottom: "1px solid #e4d8ba" }}>{r.testScore != null ? `${r.testScore}점` : "-"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {trend.length > 0 && (
+          <div className="mt-4">
+            <div className="text-xs mb-2" style={{ color: "#7a6f52" }}>테스트 점수 변화 (데일리·주간·월말·누적 전체)</div>
+            <TestTrendChart trend={trend} />
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif", color: "#173226" }}>다음 달 학습 계획</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <ManualField label="다음 달 진도" field="nextProgress" placeholder="예: 삼각형의 성질" />
+          <ManualField label="집중 학습 영역" field="nextFocus" placeholder="예: 서술형 풀이 과정" />
+          <ManualField label="보완할 부분" field="nextWeak" placeholder="예: 도형 조건 정리" />
+          <ManualField label="이번 달 목표" field="nextGoal" placeholder="예: 중간고사 90점 이상" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ================= ADMIN/강사: 월간 리포트 =================
+function MonthlyReportBuilder({ data, setData, scopeClassGroups }) {
+  const [studentId, setStudentId] = useState("");
+  const [month, setMonth] = useState(todayStr().slice(0, 7));
+  const scopedStudents = studentsInScope(data.students, scopeClassGroups);
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 grid grid-cols-2 gap-3 print-hide" style={panel}>
+        <Field label="학생 선택"><StudentSelect students={scopedStudents} value={studentId} onChange={setStudentId} /></Field>
+        <Field label="월 선택"><input type="month" className={inputCls} style={inputStyle} value={month} onChange={e => setMonth(e.target.value)} /></Field>
+      </div>
+      {!studentId ? <EmptyState text="학생을 선택하면 리포트가 표시됩니다." /> : (
+        <>
+          <button onClick={() => window.print()} className="w-full py-2.5 rounded-lg text-sm font-semibold" style={btnGold}>PDF로 저장</button>
+          <MonthlyReportView data={data} setData={setData} studentId={studentId} month={month} editable />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ================= 학생: 월간 리포트 (읽기 전용) =================
+function StudentMonthlyReportTab({ data, studentId }) {
+  const [month, setMonth] = useState(todayStr().slice(0, 7));
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 print-hide" style={panel}>
+        <Field label="월 선택"><input type="month" className={inputCls} style={inputStyle} value={month} onChange={e => setMonth(e.target.value)} /></Field>
+      </div>
+      <MonthlyReportView data={data} studentId={studentId} month={month} editable={false} />
+    </div>
+  );
 }
 
 function buildMonthlyReportText(student, monthStr, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, studyMinutes, hwRate) {
@@ -2871,14 +3136,14 @@ const COMPONENT_MAP = {
   sessions: SessionsTab, tests: TestsTab, seats: SeatsAdminTab,
   videos: VideosTab, routine: AdminRoutineTab, alerts: AlertsTab,
   rules: RulesTab, attendance: AttendanceTab, teachers: TeachersTab,
-  requests: RequestsTab, dailyRoutine: DailyRoutineTab, weeklyRoutine: WeeklyRoutineTab, announcements: AnnouncementsTab,
+  requests: RequestsTab, dailyRoutine: DailyRoutineTab, weeklyRoutine: WeeklyRoutineTab, announcements: AnnouncementsTab, monthlyReport: MonthlyReportBuilder,
   eduPhilosophy: EduPhilosophyTab, curriculum: CurriculumTab, today: TodayChecklistTab, classSchedule: ClassScheduleTab, messages: MessagesTab, badges: BadgeStatusTab,
 };
 
 const GROUPS = [
   { id: "dashboard", label: "대시보드", icon: Home, accent: "#4c8c5f", tabs: [{ id: "dashboard", label: "요약" }, { id: "today", label: "오늘 할 일" }] },
   { id: "students", label: "학생 관리", icon: Users, accent: "#4c8c5f", tabs: [{ id: "students", label: "학생 명부" }, { id: "routine", label: "루틴체크" }] },
-  { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }, { id: "badges", label: "칭찬배지" }] },
+  { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "monthlyReport", label: "월간 리포트" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }, { id: "badges", label: "칭찬배지" }] },
   { id: "schedule", label: "일정·자습실", icon: CalendarClock, accent: "#e2822f", tabs: [{ id: "sessions", label: "보강·클리닉" }, { id: "requests", label: "결석신고" }, { id: "seats", label: "자습실 관리" }] },
   { id: "classroom", label: "강의실", icon: BookOpen, accent: "#c65a1f", tabs: [{ id: "videos", label: "강의 업로드" }, { id: "curriculum", label: "커리큘럼" }, { id: "eduPhilosophy", label: "교육관" }, { id: "classSchedule", label: "반 시간표" }] },
   { id: "comm", label: "소통", icon: Bell, accent: "#c65a1f", tabs: [{ id: "alerts", label: "학부모 알림" }, { id: "requests", label: "요청함" }, { id: "messages", label: "1:1 문의" }, { id: "announcements", label: "공지사항 (휴원 등)" }] },
@@ -3358,6 +3623,7 @@ const TEACHER_TABS = [
   { id: "today", label: "오늘 현황", icon: Home },
   { id: "routine", label: "오늘의 루틴", icon: ClipboardList },
   { id: "weeklyRoutine", label: "주간 루틴", icon: TrendingUp },
+  { id: "monthlyReport", label: "월간 리포트", icon: FileText },
   { id: "homework", label: "숙제", icon: BookOpen },
   { id: "classSchedule", label: "반 시간표", icon: CalendarClock },
   { id: "tests", label: "테스트기록", icon: ClipboardCheck },
@@ -3403,6 +3669,7 @@ function TeacherHome({ data, setData, patchData, teacher, onLogout }) {
       {tab === "today" && <TeacherTodayTab data={data} scopeClassGroups={teacher.classGroups} onGoToTests={() => setTab("tests")} />}
       {tab === "routine" && <DailyRoutineTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "weeklyRoutine" && <WeeklyRoutineTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
+      {tab === "monthlyReport" && <MonthlyReportBuilder data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "homework" && <HomeworkTab data={data} setData={setData} patchData={patchData} scopeClassGroups={teacher.classGroups} />}
       {tab === "classSchedule" && <ClassScheduleTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "tests" && <TestsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
@@ -4051,6 +4318,7 @@ const STUDENT_TABS = [
   { id: "retest", label: "재시험", icon: FlaskConical },
   { id: "messages", label: "문의", icon: MessageSquare },
   { id: "routine", label: "루틴체크", icon: Users2 },
+  { id: "monthlyReport", label: "월간 리포트", icon: TrendingUp },
   { id: "rules", label: "학원규정", icon: FileText },
 ];
 
@@ -4163,7 +4431,10 @@ function StudentAttendanceCheckin({ data, setData, studentId }) {
   const checkIn = () => {
     const now = new Date();
     const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-    const status = time <= cutoff ? "출석" : "지각";
+    const [ch, cm] = cutoff.split(":").map(Number);
+    const graceTotalMin = ch * 60 + cm + 5; // 정규수업시간 기준 5분까지는 출석으로 인정
+    const graceLimit = `${String(Math.floor(graceTotalMin / 60) % 24).padStart(2, "0")}:${String(graceTotalMin % 60).padStart(2, "0")}`;
+    const status = time <= graceLimit ? "출석" : "지각";
     const entry = { id: uid(), studentId, date: today, status, time, source: "student" };
     setData({ ...data, attendance: [...data.attendance, entry] });
   };
@@ -4174,7 +4445,7 @@ function StudentAttendanceCheckin({ data, setData, studentId }) {
     <div className="rounded-2xl p-5" style={{ background: "#173226" }}>
       <div className="text-[10px] tracking-[0.3em] mb-3" style={{ color: "var(--gold)" }}>ROUTINE MATH ACADEMY</div>
       <h3 className="text-lg font-bold mb-1" style={{ color: "#f4efe1", fontFamily: "'Noto Serif KR', serif" }}>오늘 출석 체크인</h3>
-      <p className="text-xs mb-4" style={{ color: "rgba(244,239,225,0.6)" }}>{today} · 기준 시각 {cutoff}{student?.classGroup ? ` (${student.classGroup} 반 기준)` : " (기본 기준)"} 이전 출석 / 이후 지각</p>
+      <p className="text-xs mb-4" style={{ color: "rgba(244,239,225,0.6)" }}>{today} · 기준 시각 {cutoff}{student?.classGroup ? ` (${student.classGroup} 반 기준)` : " (기본 기준)"} · 5분까지는 출석 인정, 그 이후는 지각</p>
       {todays ? (
         <div className="rounded-xl p-4 flex items-center justify-between" style={{ background: "#1f4534" }}>
           <span className="text-sm" style={{ color: "#f4efe1" }}>{todays.time ? `${todays.time} 도착` : "체크인 완료"}</span>
@@ -4293,6 +4564,7 @@ function StudentHome({ data, setData, studentId, onLogout }) {
       {tab === "sessions" && <StudentSessionsView data={data} studentId={studentId} />}
       {tab === "notices" && <StudentNoticesTab data={data} studentId={studentId} />}
       {tab === "retest" && <StudentRetestTab data={data} studentId={studentId} />}
+      {tab === "monthlyReport" && <StudentMonthlyReportTab data={data} studentId={studentId} />}
       {tab === "messages" && <StudentMessagesTab data={data} setData={setData} studentId={studentId} />}
       {tab === "routine" && <StudentRoutineCheck data={data} setData={setData} studentId={studentId} canEdit={false} />}
       {tab === "rules" && (
@@ -4467,7 +4739,7 @@ function App() {
 
   return (
     <div style={{ "--gold": "#e2822f", "--coral": "#c65a1f" }}>
-      <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; }`}</style>
+      <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; } @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 16px; } #print-area input, #print-area textarea { border: none !important; background: transparent !important; padding: 0 !important; resize: none; } }`}</style>
 
       {view === "gate" && <RoleGate onStudent={() => setView("studentLogin")} onTeacher={() => setView("teacherLogin")} onAdmin={() => setView("adminGate")} />}
 
