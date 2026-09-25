@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-128";
+const APP_VERSION = "2026-09-25-131";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -3043,7 +3043,7 @@ function StudentRoutineCheck({ data, setData, patchData, studentId, canEdit }) {
             )}
           </div>
         </div>
-        <PlannerTaskList data={data} setData={setData} studentId={studentId} date={plannerViewDate} readOnly />
+        <PlannerTaskList data={data} setData={setData} studentId={studentId} date={plannerViewDate} readOnly adminDelete={canEdit} />
         <DayTimeline blocks={data.plannerBlocks.filter(b => b.studentId === studentId && b.date === plannerViewDate)} subjectList={studentSubjectList(data, studentId)} />
       </div>
 
@@ -3851,20 +3851,54 @@ function TeachersTab({ data, setData }) {
 
 // ================= 학생 모드 =================
 // 오늘 할 일 계획 (과목별로 묶어서 체크리스트로 표시, 타임테이블과 같은 과목 색상 사용)
-function PlannerTaskList({ data, setData, studentId, date, readOnly }) {
+function PlannerTaskList({ data, setData, studentId, date, readOnly, adminDelete }) {
   const [subject, setSubject] = useState("");
   const [content, setContent] = useState("");
+  // 삭제 가능 시간(10분)이 지나면 X 버튼이 사라지도록 30초마다 화면 갱신
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(id); }, []);
   const tasks = (data.plannerTasks || []).filter(t => t.studentId === studentId && t.date === date);
   const bySubject = {};
   tasks.forEach(t => { (bySubject[t.subject] = bySubject[t.subject] || []).push(t); });
 
+  const DELETE_WINDOW_MS = 10 * 60 * 1000;
+  // 학생은 추가 후 10분 안에만 삭제 가능 (오타·중복 수정용). 그 뒤엔 못 한 일을 지워서 달성률을 올릴 수 없음.
+  const canStudentDelete = (t) => !!t.createdAt && now - t.createdAt < DELETE_WINDOW_MS;
+  // 미룬 할 일이 들어갈 날짜: 오늘 이후 계획이면 다음 날, 이미 지난 날짜 계획이면 오늘
+  const today = todayStr();
+  const postponeTarget = date >= today ? addDaysToDateStr(date, 1) : today;
+  const shortDate = (d) => { const [, m, dd] = d.split("-"); return `${Number(m)}/${Number(dd)}`; };
+
   const add = () => {
     if (!subject.trim() || !content.trim()) return;
-    setData({ ...data, plannerTasks: [...(data.plannerTasks || []), { id: uid(), studentId, date, subject: subject.trim(), content: content.trim(), done: false }] });
+    setData({ ...data, plannerTasks: [...(data.plannerTasks || []), { id: uid(), studentId, date, subject: subject.trim(), content: content.trim(), done: false, createdAt: Date.now() }] });
     setContent("");
   };
-  const toggle = (t) => setData({ ...data, plannerTasks: data.plannerTasks.map(x => x.id === t.id ? { ...x, done: !x.done } : x) });
+  const toggle = (t) => { if (t.postponedTo) return; setData({ ...data, plannerTasks: data.plannerTasks.map(x => x.id === t.id ? { ...x, done: !x.done } : x) }); };
   const remove = (id) => setData({ ...data, plannerTasks: data.plannerTasks.filter(t => t.id !== id) });
+  const removeByAdmin = (t) => { if (window.confirm(`"${t.content}" 계획을 삭제할까요?\n삭제하면 달성률 계산에서도 빠져요.`)) remove(t.id); };
+  // 내일로 미루기: 원래 날짜엔 "미룸"으로 남아 미완료로 계산되고, 같은 할 일이 다음 날 목록에 추가됨
+  const postpone = (t) => {
+    const copy = { id: uid(), studentId, date: postponeTarget, subject: t.subject, content: t.content, done: false, carriedFrom: t.date };
+    setData({ ...data, plannerTasks: [...data.plannerTasks.map(x => x.id === t.id ? { ...x, done: false, postponedTo: postponeTarget } : x), copy] });
+  };
+
+  const circle = (t) => (
+    <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{ border: `2px solid ${t.done ? "#4c8c5f" : t.postponedTo ? "#c9b98f" : "#ddcda0"}`, background: t.done ? "#4c8c5f" : "transparent", borderStyle: t.postponedTo ? "dashed" : "solid" }}>
+      {t.done && <Check size={12} color="#fff" />}
+    </span>
+  );
+  const label = (t) => (
+    <span className="flex flex-col">
+      <span>{t.content}</span>
+      {(t.postponedTo || t.carriedFrom) && (
+        <span className="text-[10px] font-semibold" style={{ color: t.postponedTo ? "var(--coral)" : "#8a5a17", textDecoration: "none" }}>
+          {t.postponedTo ? `→ ${shortDate(t.postponedTo)}로 미룸` : `↩ ${shortDate(t.carriedFrom)}에서 넘어옴`}
+        </span>
+      )}
+    </span>
+  );
+  const textStyle = (t) => ({ color: t.done || t.postponedTo ? "#8a7f5e" : "#2b2417", textDecoration: t.done ? "line-through" : "none" });
 
   return (
     <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
@@ -3888,23 +3922,21 @@ function PlannerTaskList({ data, setData, studentId, date, readOnly }) {
               </div>
               <ul className="flex flex-col gap-1.5">
                 {bySubject[subj].map(t => (
-                  <li key={t.id} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: "#efe6d0" }}>
+                  <li key={t.id} className="flex items-center gap-2 p-2 rounded-lg" style={{ background: t.postponedTo ? "#f4ecd9" : "#efe6d0" }}>
                     {readOnly ? (
-                      <div className="flex items-center gap-2 text-sm flex-1" style={{ color: t.done ? "#8a7f5e" : "#2b2417", textDecoration: t.done ? "line-through" : "none" }}>
-                        <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{ border: `2px solid ${t.done ? "#4c8c5f" : "#ddcda0"}`, background: t.done ? "#4c8c5f" : "transparent" }}>
-                          {t.done && <Check size={12} color="#fff" />}
-                        </span>
-                        {t.content}
-                      </div>
+                      <>
+                        <div className="flex items-center gap-2 text-sm flex-1" style={textStyle(t)}>{circle(t)}{label(t)}</div>
+                        {adminDelete && <button onClick={() => removeByAdmin(t)} title="선생님 삭제"><Trash2 size={14} color="#a89d84" /></button>}
+                      </>
                     ) : (
                       <>
-                        <button onClick={() => toggle(t)} className="flex items-center gap-2 text-sm flex-1 text-left" style={{ color: t.done ? "#8a7f5e" : "#2b2417", textDecoration: t.done ? "line-through" : "none" }}>
-                          <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{ border: `2px solid ${t.done ? "#4c8c5f" : "#ddcda0"}`, background: t.done ? "#4c8c5f" : "transparent" }}>
-                            {t.done && <Check size={12} color="#fff" />}
-                          </span>
-                          {t.content}
-                        </button>
-                        <button onClick={() => remove(t.id)}><X size={14} color="#a89d84" /></button>
+                        <button onClick={() => toggle(t)} disabled={!!t.postponedTo} className="flex items-center gap-2 text-sm flex-1 text-left" style={textStyle(t)}>{circle(t)}{label(t)}</button>
+                        {!t.done && !t.postponedTo && (
+                          <button onClick={() => postpone(t)} className="text-[10px] px-2 py-1 rounded-full font-semibold flex-shrink-0" style={{ background: "#e4d8ba", color: "#5c543e" }}>
+                            {date >= today ? "내일로" : "오늘로"}
+                          </button>
+                        )}
+                        {canStudentDelete(t) && <button onClick={() => remove(t.id)} title="추가 후 10분 안에만 삭제할 수 있어요"><X size={14} color="#a89d84" /></button>}
                       </>
                     )}
                   </li>
@@ -3914,6 +3946,8 @@ function PlannerTaskList({ data, setData, studentId, date, readOnly }) {
           ))}
         </div>
       )}
+      {!readOnly && tasks.length > 0 && <p className="text-[11px] font-semibold flex items-center gap-1" style={{ color: "#8a5a17" }}><Check size={11} />완료한 할 일은 꼭 눌러서 줄을 그어주세요. 줄 그은 할 일만 이번 주 달성률에 들어가요.</p>}
+      {!readOnly && tasks.length > 0 && <p className="text-[11px] flex items-center gap-1" style={{ color: "#8a7f5e" }}><Lock size={11} />할 일은 추가하고 10분 안에만 지울 수 있어요. 못 한 일은 "내일로"를 눌러 넘겨주세요.</p>}
       {!readOnly && <p className="text-[11px]" style={{ color: "#8a7f5e" }}>과목명을 아래 순공 타이머에서 쓸 것과 똑같이 입력하면, 타임테이블 색깔이랑 계획 색깔이 서로 맞춰져요.</p>}
     </div>
   );
