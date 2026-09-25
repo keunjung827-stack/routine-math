@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-14-127";
+const APP_VERSION = "2026-09-14-128";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -148,6 +148,7 @@ window.storage = {
     } catch (e) { console.error("storage.list (localStorage) 실패", e); return null; }
   },
 };
+
 
 
 
@@ -1855,11 +1856,11 @@ function MonthlyReportView({ data, setData, studentId, month, editable }) {
       </div>
 
       <div className="rounded-2xl p-4" style={panel}>
-        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif", color: "#173226" }}>선생님 코멘트</h3>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif", color: "#173226" }}>피드백</h3>
         {editable ? (
-          <ManualField label="" value={manual.comment || ""} onSave={v => updateManual("comment", v)} editable={editable} placeholder="이번 달 학생에 대한 코멘트를 적어주세요" multiline minHeight={90} />
+          <ManualField label="" value={manual.comment || ""} onSave={v => updateManual("comment", v)} editable={editable} placeholder="이번 달 학생에 대한 피드백을 적어주세요" multiline minHeight={90} />
         ) : (
-          <div className="rounded-lg p-4 text-sm" style={{ background: "#fdf6ea", borderLeft: "4px solid var(--gold)", lineHeight: 1.75, whiteSpace: "pre-line" }}>{manual.comment || "아직 작성된 코멘트가 없습니다."}</div>
+          <div className="rounded-lg p-4 text-sm" style={{ background: "#fdf6ea", borderLeft: "4px solid var(--gold)", lineHeight: 1.75, whiteSpace: "pre-line" }}>{manual.comment || "아직 작성된 피드백이 없습니다."}</div>
         )}
       </div>
 
