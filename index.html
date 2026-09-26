@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-26-135";
+const APP_VERSION = "2026-09-26-136";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -3919,10 +3919,17 @@ function PlannerTaskList({ data, setData, studentId, date, readOnly, adminDelete
   const remove = (id) => setData({ ...data, plannerTasks: data.plannerTasks.filter(t => t.id !== id) });
   const removeByAdmin = (t) => { if (window.confirm(`"${t.content}" 계획을 삭제할까요?\n삭제하면 달성률 계산에서도 빠져요.`)) remove(t.id); };
   // 내일로 미루기: 원래 날짜엔 "미룸"으로 남아 미완료로 계산되고, 같은 할 일이 다음 날 목록에 추가됨
-  const postpone = (t) => {
-    const copy = { id: uid(), studentId, date: postponeTarget, subject: t.subject, content: t.content, done: false, carriedFrom: t.date };
-    setData({ ...data, plannerTasks: [...data.plannerTasks.map(x => x.id === t.id ? { ...x, done: false, postponedTo: postponeTarget } : x), copy] });
+  const postponeMany = (list) => {
+    if (list.length === 0) return;
+    const ids = new Set(list.map(t => t.id));
+    const copies = list.map(t => ({ id: uid(), studentId, date: postponeTarget, subject: t.subject, content: t.content, done: false, carriedFrom: t.date }));
+    setData({ ...data, plannerTasks: [...data.plannerTasks.map(x => ids.has(x.id) ? { ...x, done: false, postponedTo: postponeTarget } : x), ...copies] });
   };
+  const postpone = (t) => postponeMany([t]);
+  // 지난 날짜인데 체크도, 미루기도 안 한 할 일 → 마무리 안내
+  const unfinished = tasks.filter(t => !t.done && !t.postponedTo);
+  const isPast = date < today;
+  const targetLabel = `${shortDate(postponeTarget)}${postponeTarget === today ? "(오늘)" : ""}`;
 
   const circle = (t) => (
     <span className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0" style={{ border: `2px solid ${t.done ? "#4c8c5f" : t.postponedTo ? "#c9b98f" : "#ddcda0"}`, background: t.done ? "#4c8c5f" : "transparent", borderStyle: t.postponedTo ? "dashed" : "solid" }}>
@@ -3951,6 +3958,20 @@ function PlannerTaskList({ data, setData, studentId, date, readOnly, adminDelete
             <b className="text-sm" style={{ color: "#8a3a0f" }}>다 한 일은 꼭 눌러서 줄을 그어주세요!</b>
             <span className="text-xs" style={{ color: "#6b4a1f" }}>줄 그은 할 일만 <b>이번 주 달성률</b>에 들어가요. 했는데 안 누르면 못 한 걸로 계산돼요.</span>
           </div>
+        </div>
+      )}
+      {!readOnly && isPast && unfinished.length > 0 && (
+        <div className="rounded-xl px-3 py-2.5 flex flex-col gap-2" style={{ background: "#fbe3dc", border: "2px solid var(--coral)" }}>
+          <div className="flex items-start gap-2">
+            <Repeat size={16} color="var(--coral)" className="flex-shrink-0 mt-0.5" />
+            <div className="flex flex-col gap-0.5">
+              <b className="text-sm" style={{ color: "#8a2a0f" }}>완료하지 못한 계획이 {unfinished.length}개 있어요.</b>
+              <span className="text-xs" style={{ color: "#6b3a1f" }}>했는데 체크를 깜빡했다면 눌러서 줄을 그어주고, 못 한 일은 {targetLabel} 계획으로 미뤄주세요.</span>
+            </div>
+          </div>
+          <button onClick={() => postponeMany(unfinished)} className="self-start px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1" style={{ background: "var(--coral)", color: "#fff" }}>
+            <Repeat size={12} />남은 {unfinished.length}개 모두 {targetLabel}로 미루기
+          </button>
         </div>
       )}
       {!readOnly && (
@@ -3983,7 +4004,7 @@ function PlannerTaskList({ data, setData, studentId, date, readOnly, adminDelete
                         <button onClick={() => toggle(t)} disabled={!!t.postponedTo} className="flex items-center gap-2 text-sm flex-1 text-left" style={textStyle(t)}>{circle(t)}{label(t)}</button>
                         {!t.done && !t.postponedTo && (
                           <button onClick={() => postpone(t)} className="text-[10px] px-2 py-1 rounded-full font-semibold flex-shrink-0" style={{ background: "#e4d8ba", color: "#5c543e" }}>
-                            {date >= today ? "내일로" : "오늘로"}
+                            {shortDate(postponeTarget)}로 미루기
                           </button>
                         )}
                         {canStudentDelete(t) && (
@@ -4003,7 +4024,7 @@ function PlannerTaskList({ data, setData, studentId, date, readOnly, adminDelete
       {!readOnly && tasks.length > 0 && (
         <div className="text-[11px] flex flex-col gap-0.5" style={{ color: "#6b6250" }}>
           <span className="flex items-start gap-1"><Lock size={11} className="flex-shrink-0 mt-0.5" /><span><b>계획 수정 시간은 10분이에요.</b> 할 일을 잘못 적었다면 추가한 뒤 10분 안에 "지우기"를 눌러 지우고 다시 적어주세요. 10분이 지나면 지울 수 없어요.</span></span>
-          <span className="flex items-start gap-1"><Repeat size={11} className="flex-shrink-0 mt-0.5" /><span><b>하루를 마무리할 때 못 한 일은 "내일로"를 눌러주세요.</b> 그 할 일이 내일 계획으로 옮겨져요. 오늘 달성률에는 못 한 일로 남으니, 내일 꼭 끝내주세요.</span></span>
+          <span className="flex items-start gap-1"><Repeat size={11} className="flex-shrink-0 mt-0.5" /><span><b>하루를 마무리할 때 못 한 일은 "{shortDate(postponeTarget)}로 미루기"를 눌러주세요.</b> 그 할 일이 {targetLabel} 계획으로 옮겨져요. 이 날 달성률에는 못 한 일로 남으니, 옮겨간 날에 꼭 끝내주세요.</span></span>
         </div>
       )}
       {!readOnly && <p className="text-[11px]" style={{ color: "#8a7f5e" }}>과목명을 아래 순공 타이머에서 쓸 것과 똑같이 입력하면, 타임테이블 색깔이랑 계획 색깔이 서로 맞춰져요.</p>}
