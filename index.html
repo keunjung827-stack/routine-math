@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-25-131";
+const APP_VERSION = "2026-09-26-132";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -428,38 +428,93 @@ const emptyData = () => ({
   monthlyReports: {},
 });
 
+// ---- 메인 데이터 전용 저장 함수 ----
+// 오류를 삼키지 않고 던짐: "서버 연결 실패"와 "데이터가 아직 없음"을 구분해야 빈 데이터로 덮어쓰는 사고를 막을 수 있음.
+const mainStore = {
+  // 서버 데이터의 마지막 수정 시각만 가져옴 (응답이 아주 작아서 전송량이 거의 들지 않음). 행이 없으면 "".
+  async getUpdatedAt() {
+    if (!supabase) return null; // localStorage 모드는 비교 불가 → 항상 전체 읽기(로컬이라 비용 없음)
+    const { data, error } = await supabase.from(TABLE).select("updated_at").eq("key", STORAGE_KEY).eq("shared", true).maybeSingle();
+    if (error) throw error;
+    return data ? (data.updated_at || "") : "";
+  },
+  // 전체 데이터 + 수정 시각. 행이 없으면 null.
+  async getFull() {
+    if (!supabase) {
+      const raw = localStorage.getItem(localKey(STORAGE_KEY, true));
+      return raw === null ? null : { value: raw, updatedAt: null };
+    }
+    const { data, error } = await supabase.from(TABLE).select("value, updated_at").eq("key", STORAGE_KEY).eq("shared", true).maybeSingle();
+    if (error) throw error;
+    return data ? { value: data.value, updatedAt: data.updated_at || "" } : null;
+  },
+  // 저장 후 서버에 기록된 수정 시각을 돌려줌
+  async save(value) {
+    const stamp = new Date().toISOString();
+    if (!supabase) { localStorage.setItem(localKey(STORAGE_KEY, true), value); return stamp; }
+    const { data, error } = await supabase.from(TABLE)
+      .upsert({ key: STORAGE_KEY, shared: true, value, updated_at: stamp }, { onConflict: "key,shared" })
+      .select("updated_at").maybeSingle();
+    if (error) throw error;
+    return (data && data.updated_at) || stamp;
+  },
+};
+const sameStamp = (a, b) => a === b || (!!a && !!b && Date.parse(a) === Date.parse(b));
+const POLL_INTERVAL_MS = 15000;
+
 function useAppData() {
   const [data, setDataState] = useState(emptyData());
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const dataRef = useRef(data);
   const savingRef = useRef(saving);
+  const loadedOkRef = useRef(false);   // 서버에서 데이터를 제대로 받아온 적이 있는지 (없으면 저장 금지)
+  const serverStampRef = useRef(null); // 마지막으로 받거나 저장한 서버 수정 시각
   useEffect(() => { dataRef.current = data; }, [data]);
   useEffect(() => { savingRef.current = saving; }, [saving]);
 
-  const fetchLatest = async () => {
-    try {
-      const res = await window.storage.get(STORAGE_KEY, true);
-      if (res && res.value) {
-        const parsed = { ...emptyData(), ...JSON.parse(res.value) };
-        if (JSON.stringify(parsed) !== JSON.stringify(dataRef.current)) {
-          setDataState(parsed);
-        }
+  const parseValue = (value) => ({ ...emptyData(), ...JSON.parse(value) });
+
+  // 전체 데이터를 받아 화면에 반영. 실패하면 예외를 던짐.
+  const loadFull = async () => {
+    const res = await mainStore.getFull();
+    serverStampRef.current = res ? res.updatedAt : "";
+    if (res && res.value) {
+      const parsed = parseValue(res.value);
+      if (JSON.stringify(parsed) !== JSON.stringify(dataRef.current)) {
+        dataRef.current = parsed;
+        setDataState(parsed);
       }
-    } catch (e) { /* 최초 실행 또는 네트워크 오류 - 무시 */ }
+    }
+    loadedOkRef.current = true;
+    setLoadError(false);
   };
 
-  useEffect(() => {
-    (async () => {
-      await fetchLatest();
-      setLoading(false);
-    })();
-  }, []);
+  // 가벼운 변경 확인: 서버 수정 시각이 바뀐 경우에만 전체 데이터를 다시 받음
+  const fetchLatest = async () => {
+    try {
+      if (!loadedOkRef.current) { await loadFull(); return; }
+      const stamp = await mainStore.getUpdatedAt();
+      if (stamp === null || !sameStamp(stamp, serverStampRef.current)) await loadFull();
+    } catch (e) { console.error("최신 데이터 확인 실패", e); }
+  };
 
-  // 화면을 오래 켜놔도 "옛날 데이터"로 덮어쓰지 않도록, 주기적으로/탭이 다시 보일 때 최신 데이터를 다시 받아옴
+  const initialLoad = async () => {
+    setLoading(true);
+    try { await loadFull(); }
+    catch (e) { console.error("데이터 불러오기 실패", e); setLoadError(true); }
+    setLoading(false);
+  };
+
+  useEffect(() => { initialLoad(); }, []);
+
+  // 화면이 보일 때만 15초마다 변경 확인 (백그라운드 탭·꺼진 화면에서는 확인하지 않음)
   useEffect(() => {
-    const interval = setInterval(() => { if (!savingRef.current) fetchLatest(); }, 8000);
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible" && !savingRef.current) fetchLatest();
+    }, POLL_INTERVAL_MS);
     const onVisible = () => { if (document.visibilityState === "visible" && !savingRef.current) fetchLatest(); };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
@@ -470,47 +525,54 @@ function useAppData() {
     };
   }, []);
 
+  const writeToServer = async (next) => {
+    const json = JSON.stringify(next);
+    try {
+      serverStampRef.current = await mainStore.save(json);
+    } catch (e) {
+      console.error("저장 실패, 재시도 중", e);
+      try { serverStampRef.current = await mainStore.save(json); }
+      catch (e2) { console.error("저장 재시도 실패", e2); setSaveError(true); }
+    }
+  };
+
   const setData = async (next) => {
+    // 데이터를 못 불러온 상태에서 저장하면 서버의 기존 데이터를 빈 값으로 덮어쓸 수 있으므로 차단
+    if (!loadedOkRef.current) { setSaveError(true); return; }
+    dataRef.current = next;
     setDataState(next);
     setSaving(true);
     setSaveError(false);
-    try {
-      await window.storage.set(STORAGE_KEY, JSON.stringify(next), true);
-    } catch (e) {
-      console.error("저장 실패, 재시도 중", e);
-      try { await window.storage.set(STORAGE_KEY, JSON.stringify(next), true); }
-      catch (e2) { console.error("저장 재시도 실패", e2); setSaveError(true); }
-    }
+    await writeToServer(next);
     setSaving(false);
   };
 
-  // 작은 변경(토글 등)을 저장하기 직전, 서버의 최신 데이터를 다시 받아온 뒤 그 위에 patchFn을 적용해서 저장.
-  // 여러 기기에서 동시에 저장할 때 서로의 변경사항을 덮어쓰는 사고를 줄여줌.
+  // 작은 변경(토글 등): 서버가 그사이 바뀌었으면 최신 데이터 위에 patchFn을 다시 적용해서 저장 (다른 기기 변경 보존)
   const patchData = async (patchFn) => {
-    // 누르자마자 바로 화면에 반영 (즉각 반응)
-    setDataState(patchFn(dataRef.current));
-    setSaving(true);
-    // 그 사이 서버 최신 데이터를 받아와서, 같은 변경을 그 위에 다시 적용해 저장 (다른 기기와의 충돌 방지)
+    if (!loadedOkRef.current) { setSaveError(true); return; }
     let base = dataRef.current;
+    const optimistic = patchFn(base);
+    dataRef.current = optimistic;
+    setDataState(optimistic);
+    setSaving(true);
+    setSaveError(false);
     try {
-      const res = await window.storage.get(STORAGE_KEY, true);
-      if (res && res.value) base = { ...emptyData(), ...JSON.parse(res.value) };
+      const stamp = await mainStore.getUpdatedAt();
+      if (stamp === null || !sameStamp(stamp, serverStampRef.current)) {
+        const res = await mainStore.getFull();
+        if (res && res.value) base = parseValue(res.value);
+      }
     } catch (e) { /* 최신 데이터를 못 받아오면 로컬 데이터 기준으로 진행 */ }
     const next = patchFn(base);
+    dataRef.current = next;
     setDataState(next);
-    setSaveError(false);
-    try {
-      await window.storage.set(STORAGE_KEY, JSON.stringify(next), true);
-    } catch (e) {
-      console.error("저장 실패, 재시도 중", e);
-      try { await window.storage.set(STORAGE_KEY, JSON.stringify(next), true); }
-      catch (e2) { console.error("저장 재시도 실패", e2); setSaveError(true); }
-    }
+    await writeToServer(next);
     setSaving(false);
   };
 
-  return { data, setData, patchData, loading, saving, saveError };
+  return { data, setData, patchData, loading, loadError, retryLoad: initialLoad, saving, saveError };
 }
+
 
 function syncAlerts(alerts, sourceKey, shouldExist, buildAlert) {
   const existingPending = alerts.find(a => a.sourceKey === sourceKey && a.status === "대기");
@@ -2425,89 +2487,68 @@ function EduPhilosophyTab({ data, setData }) {
 }
 
 // ================= ADMIN: 강의 업로드 (강의실 영상 관리) =================
+function isYoutubeUrl(u) {
+  try {
+    const h = new URL(u.trim()).hostname.replace(/^www\.|^m\./, "");
+    return h === "youtube.com" || h === "youtu.be" || h === "youtube-nocookie.com";
+  } catch (e) { return false; }
+}
+
 function VideosTab({ data, setData }) {
-  const [mode, setMode] = useState("link"); // "link" | "file"
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
   const [target, setTarget] = useState("ALL");
-  const [file, setFile] = useState(null);
-  const [fileError, setFileError] = useState("");
-  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
 
-  const onPickFile = (f) => {
-    setFileError("");
-    if (!f) { setFile(null); return; }
-    if (!f.type.startsWith("video/")) { setFileError("영상 파일만 업로드할 수 있어요."); setFile(null); return; }
-    if (f.size > MAX_VIDEO_FILE_BYTES) {
-      setFileError(`파일이 너무 큽니다 (${(f.size / 1024 / 1024).toFixed(1)}MB). 4MB 이하 영상만 직접 업로드할 수 있어요. 더 큰 영상은 유튜브 등에 올린 뒤 링크로 등록해 주세요.`);
-      setFile(null);
-      return;
-    }
-    setFile(f);
-  };
-
-  const add = async () => {
-    if (!title.trim()) return;
-    if (mode === "link") {
-      if (!url.trim()) return;
-      setData({ ...data, videos: [...data.videos, { id: uid(), title, url, target, type: "link", createdAt: new Date().toISOString() }] });
-      setTitle(""); setUrl("");
-    } else {
-      if (!file) return;
-      setUploading(true);
-      try {
-        const dataUrl = await fileToDataURL(file);
-        setData({ ...data, videos: [...data.videos, { id: uid(), title, url: dataUrl, target, type: "file", createdAt: new Date().toISOString() }] });
-        setTitle(""); setFile(null);
-      } catch (e) {
-        setFileError("파일 처리 중 오류가 발생했습니다.");
-      }
-      setUploading(false);
-    }
+  const add = () => {
+    setError("");
+    if (!title.trim()) { setError("제목을 입력해 주세요."); return; }
+    if (!isYoutubeUrl(url)) { setError("유튜브 링크만 등록할 수 있어요. (youtube.com 또는 youtu.be 주소)"); return; }
+    setData({ ...data, videos: [...data.videos, { id: uid(), title: title.trim(), url: url.trim(), target, type: "link", createdAt: new Date().toISOString() }] });
+    setTitle(""); setUrl("");
   };
 
   const remove = (id) => setData({ ...data, videos: data.videos.filter(v => v.id !== id) });
+  // 예전에 파일로 올린 영상: 데이터 안에 영상이 통째로 들어 있어 앱 전송량을 크게 늘림
+  const fileVideos = data.videos.filter(v => v.type === "file");
+  const removeAllFiles = () => {
+    if (window.confirm(`파일로 올린 영상 ${fileVideos.length}개를 모두 삭제할까요?\n필요한 영상은 유튜브에 올린 뒤 링크로 다시 등록해 주세요.`)) {
+      setData({ ...data, videos: data.videos.filter(v => v.type !== "file") });
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
-        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>강의 업로드</h3>
-        <div className="flex gap-2">
-          {[{ id: "link", label: "링크로 등록" }, { id: "file", label: "파일 업로드" }].map(m => (
-            <button key={m.id} onClick={() => { setMode(m.id); setFileError(""); }} className="flex-1 py-2 rounded-lg text-xs font-semibold"
-              style={{ background: mode === m.id ? "var(--gold)" : "#efe6d0", color: mode === m.id ? "#1a1508" : "#6b6250" }}>{m.label}</button>
-          ))}
-        </div>
+        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>강의 등록 (유튜브 링크)</h3>
         <Field label="제목"><input className={inputCls} style={inputStyle} value={title} onChange={e => setTitle(e.target.value)} placeholder="예: 공통수학2 이차함수 개념정리" /></Field>
-        {mode === "link" ? (
-          <Field label="영상 링크(URL)"><input className={inputCls} style={inputStyle} value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." /></Field>
-        ) : (
-          <Field label="영상 파일 (최대 4MB)">
-            <input type="file" accept="video/*" className={inputCls} style={inputStyle} onChange={e => onPickFile(e.target.files[0])} />
-            {file && <span className="text-[11px]" style={{ color: "#7a6f52" }}>선택됨: {file.name} ({(file.size / 1024 / 1024).toFixed(1)}MB)</span>}
-            {fileError && <span className="text-[11px]" style={{ color: "var(--coral)" }}>{fileError}</span>}
-          </Field>
-        )}
+        <Field label="유튜브 링크"><input className={inputCls} style={inputStyle} value={url} onChange={e => setUrl(e.target.value)} placeholder="https://youtu.be/..." /></Field>
         <Field label="대상 학년">
           <select className={inputCls} style={inputStyle} value={target} onChange={e => setTarget(e.target.value)}>
             <option value="ALL">전체 학생</option>
             {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
           </select>
         </Field>
-        <button onClick={add} disabled={uploading} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}>
-          <Plus size={16} />{uploading ? "업로드 중…" : "업로드"}
-        </button>
-        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>파일 업로드는 앱 저장 공간을 함께 쓰므로 용량이 작은 영상(4MB 이하)만 가능해요. 긴 강의 영상은 유튜브 등에 올린 뒤 "링크로 등록"을 이용해 주세요.</p>
+        {error && <span className="text-[11px]" style={{ color: "var(--coral)" }}>{error}</span>}
+        <button onClick={add} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />등록</button>
+        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>영상은 유튜브에 올린 뒤 링크로 등록해 주세요. 학생에게만 보여주려면 유튜브 공개 범위를 "일부 공개"로 설정하면 돼요.</p>
       </div>
+      {fileVideos.length > 0 && (
+        <div className="rounded-2xl p-4 flex flex-col gap-2" style={{ ...panel, border: "1.5px solid var(--coral)" }}>
+          <b className="text-sm" style={{ color: "var(--coral)" }}>⚠️ 파일로 올린 영상 {fileVideos.length}개가 남아 있어요</b>
+          <p className="text-xs" style={{ color: "#5c543e" }}>이 영상들은 앱 데이터 안에 통째로 들어 있어서, 학생들이 앱을 열 때마다 함께 전송돼요. 유튜브 링크로 다시 등록한 뒤 삭제해 주세요.</p>
+          <button onClick={removeAllFiles} className="self-start px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1" style={{ background: "var(--coral)", color: "#fff" }}><Trash2 size={13} />파일 영상 모두 삭제</button>
+        </div>
+      )}
       <div className="rounded-2xl p-4" style={panel}>
-        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>업로드된 강의 ({data.videos.length})</h3>
+        <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>등록된 강의 ({data.videos.length})</h3>
         {data.videos.length === 0 ? <EmptyState text="등록된 강의가 없습니다." /> : (
           <ul className="flex flex-col gap-2">
             {data.videos.map(v => (
               <li key={v.id} className="flex items-center justify-between p-3 rounded-lg" style={{ background: "#efe6d0" }}>
                 <div className="text-sm" style={{ color: "#4a4332" }}>
                   <b style={{ color: "#2b2417" }}>{v.title}</b>
-                  <div className="text-xs" style={{ color: "#7a6f52" }}>{v.target === "ALL" ? "전체" : v.target} · {v.type === "file" ? "직접 업로드" : "링크"}</div>
+                  <div className="text-xs" style={{ color: v.type === "file" ? "var(--coral)" : "#7a6f52" }}>{v.target === "ALL" ? "전체" : v.target} · {v.type === "file" ? "파일 영상 (삭제 권장)" : "유튜브 링크"}</div>
                 </div>
                 <button onClick={() => remove(v.id)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
               </li>
@@ -4725,7 +4766,7 @@ function RoleGate({ onTeacher, onStudent, onAdmin }) {
 }
 
 function App() {
-  const { data, setData, patchData, loading, saving, saveError } = useAppData();
+  const { data, setData, patchData, loading, loadError, retryLoad, saving, saveError } = useAppData();
   const [view, setView] = useState("gate");
   const [studentId, setStudentId] = useState(null);
   const [teacherId, setTeacherId] = useState(null);
@@ -4852,6 +4893,18 @@ function App() {
   }, [data, loading]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center" style={{ background: "#f6f1e4" }}><Loader2 className="animate-spin" color="var(--gold)" /></div>;
+
+  if (loadError) return (
+    <div className="min-h-screen flex items-center justify-center p-6" style={{ background: "#f6f1e4" }}>
+      <div className="rounded-2xl p-6 flex flex-col gap-3 items-center text-center max-w-sm" style={{ background: "#fffaf0", border: "1px solid #e4d8ba" }}>
+        <div className="text-3xl">⚠️</div>
+        <b style={{ color: "#2b2417" }}>서버에서 데이터를 불러오지 못했어요</b>
+        <p className="text-sm" style={{ color: "#5c543e" }}>인터넷 연결을 확인하고 다시 시도해 주세요. 계속 안 되면 선생님께 알려주세요.</p>
+        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>기존 데이터를 보호하기 위해, 연결될 때까지는 아무것도 저장되지 않아요.</p>
+        <button onClick={retryLoad} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ background: "#e2822f", color: "#1a1508" }}>다시 시도</button>
+      </div>
+    </div>
+  );
 
   const teacher = data.teachers.find(t => t.id === teacherId);
 
