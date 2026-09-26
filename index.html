@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-26-136";
+const APP_VERSION = "2026-09-26-137";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -4022,9 +4022,9 @@ function PlannerTaskList({ data, setData, studentId, date, readOnly, adminDelete
         </div>
       )}
       {!readOnly && tasks.length > 0 && (
-        <div className="text-[11px] flex flex-col gap-0.5" style={{ color: "#6b6250" }}>
-          <span className="flex items-start gap-1"><Lock size={11} className="flex-shrink-0 mt-0.5" /><span><b>계획 수정 시간은 10분이에요.</b> 할 일을 잘못 적었다면 추가한 뒤 10분 안에 "지우기"를 눌러 지우고 다시 적어주세요. 10분이 지나면 지울 수 없어요.</span></span>
-          <span className="flex items-start gap-1"><Repeat size={11} className="flex-shrink-0 mt-0.5" /><span><b>하루를 마무리할 때 못 한 일은 "{shortDate(postponeTarget)}로 미루기"를 눌러주세요.</b> 그 할 일이 {targetLabel} 계획으로 옮겨져요. 이 날 달성률에는 못 한 일로 남으니, 옮겨간 날에 꼭 끝내주세요.</span></span>
+        <div className="rounded-xl px-3 py-2.5 text-xs flex flex-col gap-1.5 leading-relaxed" style={{ background: "#f1ece0", border: "1px solid #e0d6bf", color: "#4a4332" }}>
+          <span className="flex items-start gap-1.5"><Lock size={13} className="flex-shrink-0 mt-0.5" color="#8a7f5e" /><span><b>계획 수정 시간은 10분이에요.</b> 할 일을 잘못 적었다면 추가한 뒤 10분 안에 "지우기"를 눌러 지우고 다시 적어주세요. 10분이 지나면 지울 수 없어요.</span></span>
+          <span className="flex items-start gap-1.5"><Repeat size={13} className="flex-shrink-0 mt-0.5" color="#8a7f5e" /><span><b>하루를 마무리할 때 못 한 일은 "{shortDate(postponeTarget)}로 미루기"를 눌러주세요.</b> 그 할 일이 {targetLabel} 계획으로 옮겨져요. 이 날 달성률에는 못 한 일로 남으니, 옮겨간 날에 꼭 끝내주세요.</span></span>
         </div>
       )}
       {!readOnly && <p className="text-[11px]" style={{ color: "#8a7f5e" }}>과목명을 아래 순공 타이머에서 쓸 것과 똑같이 입력하면, 타임테이블 색깔이랑 계획 색깔이 서로 맞춰져요.</p>}
