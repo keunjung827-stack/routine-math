@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-28-146";
+const APP_VERSION = "2026-09-28-147";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -1993,7 +1993,8 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
   const [selectedId, setSelectedId] = useState("");
   const [month, setMonth] = useState(todayStr().slice(0, 7));
   const [form, setForm] = useState(null); // 새로 만들기·구조 수정 중인 진도표
-  const selected = visible.find(c => c.id === selectedId);
+  // 선택한 진도표가 없으면(새로고침 직후 등) 첫 번째 진도표를 자동으로 보여줌
+  const selected = visible.find(c => c.id === selectedId) || visible[0];
 
   const blankForm = () => ({ id: "", title: "", textbook: "", ownerType: "class", classGroup: classOptions[0] || "", studentId: "", units: [{ id: uid(), name: "", cells: 2, labelsText: "" }] });
   const toForm = (c) => ({ ...c, units: (c.units || []).map(u => ({ ...u, labelsText: (u.labels || []).join(", ") })) });
@@ -2042,7 +2043,7 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
         {visible.length === 0 ? <EmptyState text="아직 만든 진도표가 없습니다." /> : (
           <ul className="flex flex-col gap-1.5">
             {visible.map(c => (
-              <li key={c.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg" style={{ background: c.id === selectedId ? "#fde3c8" : "#efe6d0", cursor: "pointer" }} onClick={() => setSelectedId(c.id)}>
+              <li key={c.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg" style={{ background: c.id === selected?.id ? "#fde3c8" : "#efe6d0", cursor: "pointer" }} onClick={() => setSelectedId(c.id)}>
                 <div className="text-sm" style={{ color: "#2b2417" }}>
                   <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold mr-1.5" style={{ background: c.ownerType === "class" ? "#dfe7f3" : "#f3e1ef", color: "#4a4332" }}>{c.ownerType === "class" ? "반" : "개별"}</span>
                   <b>{c.title}</b> <span className="text-xs" style={{ color: "#7a6f52" }}>· {c.ownerType === "class" ? c.classGroup : studentName(c.studentId)}{c.textbook ? ` · ${c.textbook}` : ""}</span>
