@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-28-144";
+const APP_VERSION = "2026-09-28-145";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -1910,12 +1910,11 @@ function ProgressChartGrid({ chart, month, editable, onChange, ownerLabel }) {
   const weeks = progressWeeksOfMonth(month);
   const units = chart.units || [];
   const marks = chart.marks || {};
-  const baseline = new Set(chart.baseline || []);
   const hasSubLabels = units.some(u => (u.labels || []).some(Boolean));
 
-  // 이 주보다 앞선 모든 주(이전 달 포함)에서 진행한 칸 + 처음 지정한 이전 진도 = 노랑
+  // 이 주보다 앞선 모든 주(이전 달 포함)에서 진행한 칸 = 노랑
   const doneBefore = (weekKey) => {
-    const set = new Set(baseline);
+    const set = new Set();
     Object.keys(marks).forEach(k => { if (k < weekKey) (marks[k] || []).forEach(c => set.add(c)); });
     return set;
   };
@@ -1923,11 +1922,6 @@ function ProgressChartGrid({ chart, month, editable, onChange, ownerLabel }) {
     const cur = new Set(marks[weekKey] || []);
     cur.has(cell) ? cur.delete(cell) : cur.add(cell);
     onChange({ ...chart, marks: { ...marks, [weekKey]: [...cur] } });
-  };
-  const toggleBaseline = (cell) => {
-    const cur = new Set(baseline);
-    cur.has(cell) ? cur.delete(cell) : cur.add(cell);
-    onChange({ ...chart, baseline: [...cur] });
   };
 
   const cellBorder = "1px solid #2b2417";
@@ -1971,9 +1965,6 @@ function ProgressChartGrid({ chart, month, editable, onChange, ownerLabel }) {
             )}
           </thead>
           <tbody>
-            {editable && (
-              <Row label="이전까지" labelStyle={{ color: "#8a5a17", fontSize: 11 }} colorOf={c => baseline.has(c) ? PROGRESS_YELLOW : null} onCell={toggleBaseline} />
-            )}
             {weeks.map(w => {
               const before = doneBefore(w.key);
               const green = new Set(marks[w.key] || []);
@@ -1982,7 +1973,7 @@ function ProgressChartGrid({ chart, month, editable, onChange, ownerLabel }) {
           </tbody>
         </table>
       </div>
-      {editable && <p className="text-[11px]" style={{ color: "#8a7f5e" }}>칸을 누르면 그 주 진도(초록)로 표시돼요. 지난 주에 초록이었던 칸은 다음 주부터 자동으로 노랑이 돼요. "이전까지" 줄은 이 진도표를 쓰기 전에 이미 끝낸 부분을 노랑으로 지정할 때 써요.</p>}
+      {editable && <p className="text-[11px]" style={{ color: "#8a7f5e" }}>칸을 누르면 그 주 진도(초록)로 표시돼요. 지난 주에 초록이었던 칸은 다음 주부터 자동으로 노랑이 돼요.</p>}
     </div>
   );
 }
@@ -2017,7 +2008,7 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
       const prev = charts.find(c => c.id === form.id);
       saveChart({ ...prev, ...base });
     } else {
-      const chart = { id: uid(), ...base, baseline: [], marks: {}, createdAt: new Date().toISOString() };
+      const chart = { id: uid(), ...base, marks: {}, createdAt: new Date().toISOString() };
       setData({ ...data, progressCharts: [...charts, chart] });
       setSelectedId(chart.id);
     }
@@ -2027,7 +2018,7 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
   const addTextbook = (c) => {
     const name = window.prompt(`"${c.title}" 과정에 추가할 교재 이름을 입력하세요.\n(단원 구성이 그대로 복사돼요. 다르면 만든 뒤 구조 수정에서 바꿔주세요.)`, "");
     if (!name || !name.trim()) return;
-    const copy = { ...c, id: uid(), textbook: name.trim(), units: (c.units || []).map(u => ({ ...u })), baseline: [], marks: {}, createdAt: new Date().toISOString() };
+    const copy = { ...c, id: uid(), textbook: name.trim(), units: (c.units || []).map(u => ({ ...u })), marks: {}, createdAt: new Date().toISOString() };
     setData({ ...data, progressCharts: [...charts, copy] });
     setSelectedId(copy.id);
   };
