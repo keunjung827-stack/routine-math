@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-28-143";
+const APP_VERSION = "2026-09-28-144";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -1889,12 +1889,21 @@ function progressCellKeys(chart) {
 }
 
 // 학생 리포트에 보여줄 진도표: 그 학생의 개별 진도표 + 학생이 속한 반의 진도표
+// 반 진도 → 개별 진도, 같은 과정의 교재끼리 붙어 있도록 정렬
+function sortProgressCharts(list) {
+  return [...list].sort((a, b) =>
+    (a.ownerType === b.ownerType ? 0 : a.ownerType === "class" ? -1 : 1) ||
+    (a.classGroup || a.studentId || "").localeCompare(b.classGroup || b.studentId || "") ||
+    a.title.localeCompare(b.title) ||
+    (a.createdAt || "").localeCompare(b.createdAt || ""));
+}
+
 function progressChartsForStudent(data, student) {
   if (!student) return [];
-  return (data.progressCharts || []).filter(c =>
+  return sortProgressCharts((data.progressCharts || []).filter(c =>
     (c.ownerType === "student" && c.studentId === student.id) ||
     (c.ownerType === "class" && c.classGroup && c.classGroup === student.classGroup)
-  );
+  ));
 }
 
 function ProgressChartGrid({ chart, month, editable, onChange, ownerLabel }) {
@@ -1984,7 +1993,7 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
   const scopedIds = new Set(scopedStudents.map(s => s.id));
   const classOptions = [...new Set([...CLASS_GROUPS, ...data.students.map(s => s.classGroup).filter(Boolean)])]
     .filter(g => !scopeClassGroups || !scopeClassGroups.length || scopeClassGroups.includes(g));
-  const visible = charts.filter(c => c.ownerType === "class" ? classOptions.includes(c.classGroup) : scopedIds.has(c.studentId));
+  const visible = sortProgressCharts(charts.filter(c => c.ownerType === "class" ? classOptions.includes(c.classGroup) : scopedIds.has(c.studentId)));
   const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
   const ownerText = (c) => c.ownerType === "class" ? `반 · ${c.classGroup}` : `개별 · ${studentName(c.studentId)}`;
 
@@ -2014,6 +2023,14 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
     }
     setForm(null);
   };
+  // 같은 과정에 교재 추가: 단원 구성을 그대로 복사하고 진도 표시는 비운 새 진도표를 만듦 (단원이 다르면 복사 후 구조 수정)
+  const addTextbook = (c) => {
+    const name = window.prompt(`"${c.title}" 과정에 추가할 교재 이름을 입력하세요.\n(단원 구성이 그대로 복사돼요. 다르면 만든 뒤 구조 수정에서 바꿔주세요.)`, "");
+    if (!name || !name.trim()) return;
+    const copy = { ...c, id: uid(), textbook: name.trim(), units: (c.units || []).map(u => ({ ...u })), baseline: [], marks: {}, createdAt: new Date().toISOString() };
+    setData({ ...data, progressCharts: [...charts, copy] });
+    setSelectedId(copy.id);
+  };
   const removeChart = (c) => {
     if (!window.confirm(`"${c.title}" (${ownerText(c)}) 진도표를 삭제할까요?\n표시한 진도 기록도 함께 지워져요.`)) return;
     setData({ ...data, progressCharts: charts.filter(x => x.id !== c.id) });
@@ -2028,7 +2045,7 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
           <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>진도표 ({visible.length})</h3>
           {!form && <button onClick={() => setForm(blankForm())} className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1" style={btnGold}><Plus size={14} />새 진도표</button>}
         </div>
-        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>반 진도표는 그 반 학생 모두의 월간 리포트에, 개별 진도표는 그 학생의 월간 리포트에만 나와요. 둘 다 있으면 둘 다 보여요.</p>
+        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>반 진도표는 그 반 학생 모두의 월간 리포트에, 개별 진도표는 그 학생의 월간 리포트에만 나와요. 둘 다 있으면 둘 다 보여요. 교재가 여러 권이면 "교재 추가"로 교재마다 진도표를 따로 만들어 주세요.</p>
         {visible.length === 0 ? <EmptyState text="아직 만든 진도표가 없습니다." /> : (
           <ul className="flex flex-col gap-1.5">
             {visible.map(c => (
@@ -2038,6 +2055,7 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
                   <b>{c.title}</b> <span className="text-xs" style={{ color: "#7a6f52" }}>· {c.ownerType === "class" ? c.classGroup : studentName(c.studentId)}{c.textbook ? ` · ${c.textbook}` : ""}</span>
                 </div>
                 <div className="flex gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => addTextbook(c)} className="px-2 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1" style={{ background: "#efe3c8", color: "#5c543e" }} title="같은 과정에 교재 추가"><Copy size={12} />교재 추가</button>
                   <button onClick={() => setForm(toForm(c))} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }} title="구조 수정"><Pencil size={14} color="#5c543e" /></button>
                   <button onClick={() => removeChart(c)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }} title="삭제"><Trash2 size={14} color="var(--coral)" /></button>
                 </div>
