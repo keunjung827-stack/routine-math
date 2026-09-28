@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-28-145";
+const APP_VERSION = "2026-09-28-146";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -1912,16 +1912,19 @@ function ProgressChartGrid({ chart, month, editable, onChange, ownerLabel }) {
   const marks = chart.marks || {};
   const hasSubLabels = units.some(u => (u.labels || []).some(Boolean));
 
-  // 이 주보다 앞선 모든 주(이전 달 포함)에서 진행한 칸 = 노랑
-  const doneBefore = (weekKey) => {
-    const set = new Set();
-    Object.keys(marks).forEach(k => { if (k < weekKey) (marks[k] || []).forEach(c => set.add(c)); });
-    return set;
+  // 칸마다 직접 지정: "" (빈칸) → "g" (초록·이번 주 진도) → "y" (노랑·이미 진행한 진도) → "" …
+  // 예전 형식(초록 칸 id 배열)도 그대로 읽음
+  const weekMap = (weekKey) => {
+    const m = marks[weekKey];
+    if (Array.isArray(m)) return Object.fromEntries(m.map(c => [c, "g"]));
+    return m || {};
   };
+  const NEXT_STATE = { "": "g", g: "y", y: "" };
   const toggleWeek = (weekKey, cell) => {
-    const cur = new Set(marks[weekKey] || []);
-    cur.has(cell) ? cur.delete(cell) : cur.add(cell);
-    onChange({ ...chart, marks: { ...marks, [weekKey]: [...cur] } });
+    const cur = { ...weekMap(weekKey) };
+    const next = NEXT_STATE[cur[cell] || ""];
+    if (next) cur[cell] = next; else delete cur[cell];
+    onChange({ ...chart, marks: { ...marks, [weekKey]: cur } });
   };
 
   const cellBorder = "1px solid #2b2417";
@@ -1966,14 +1969,13 @@ function ProgressChartGrid({ chart, month, editable, onChange, ownerLabel }) {
           </thead>
           <tbody>
             {weeks.map(w => {
-              const before = doneBefore(w.key);
-              const green = new Set(marks[w.key] || []);
-              return <Row key={w.key} label={w.label} colorOf={c => green.has(c) ? PROGRESS_GREEN : before.has(c) ? PROGRESS_YELLOW : null} onCell={editable ? (c => toggleWeek(w.key, c)) : null} />;
+              const wm = weekMap(w.key);
+              return <Row key={w.key} label={w.label} colorOf={c => wm[c] === "g" ? PROGRESS_GREEN : wm[c] === "y" ? PROGRESS_YELLOW : null} onCell={editable ? (c => toggleWeek(w.key, c)) : null} />;
             })}
           </tbody>
         </table>
       </div>
-      {editable && <p className="text-[11px]" style={{ color: "#8a7f5e" }}>칸을 누르면 그 주 진도(초록)로 표시돼요. 지난 주에 초록이었던 칸은 다음 주부터 자동으로 노랑이 돼요.</p>}
+      {editable && <p className="text-[11px]" style={{ color: "#8a7f5e" }}>칸을 누를 때마다 <b style={{ color: PROGRESS_GREEN }}>초록</b> → <b style={{ color: "#b39a00" }}>노랑</b> → 빈칸 순서로 바뀌어요.</p>}
     </div>
   );
 }
