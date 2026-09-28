@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-26-139";
+const APP_VERSION = "2026-09-28-140";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -1241,6 +1241,7 @@ function TestsTab({ data, setData, scopeClassGroups }) {
   const [passLine, setPassLine] = useState("70");
   const [note, setNote] = useState("");
   const [filter, setFilter] = useState("");
+  const [showAddForm, setShowAddForm] = useState(false);
   const scopedStudents = studentsInScope(data.students, scopeClassGroups);
   const scopedIds = new Set(scopedStudents.map(s => s.id));
   const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
@@ -1283,8 +1284,18 @@ function TestsTab({ data, setData, scopeClassGroups }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {!showAddForm ? (
+        <div className="rounded-2xl px-4 py-3 flex items-center justify-between gap-3 flex-wrap" style={panel}>
+          <span className="text-xs" style={{ color: "#6b6250" }}>평소 시험 결과는 <b>오늘의 루틴 → 오늘의 평가</b>에서 입력하세요.</span>
+          <button onClick={() => setShowAddForm(true)} className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1" style={{ border: "1px solid #ddcda0", color: "#5c543e", background: "#fffaf0" }}><Plus size={13} />추가 입력</button>
+        </div>
+      ) : (
       <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
-        <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>테스트 결과 입력</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>테스트 결과 추가 입력</h3>
+          <button onClick={() => setShowAddForm(false)} className="text-xs flex items-center gap-1" style={{ color: "#8a7f5e" }}><X size={14} />접기</button>
+        </div>
+        <p className="text-[11px] -mt-1" style={{ color: "#8a7f5e" }}>같은 날 시험을 하나 더 봤거나, 루틴 기록 없이 시험 결과만 넣을 때 쓰세요. 학부모 루틴 알림은 만들어지지 않아요.</p>
         <div className="grid grid-cols-2 gap-3">
           <Field label="학생"><StudentSelect students={scopedStudents} value={studentId} onChange={setStudentId} /></Field>
           <Field label="유형">
@@ -1300,6 +1311,7 @@ function TestsTab({ data, setData, scopeClassGroups }) {
         <Field label="선생님 코멘트 (선택)"><input className={inputCls} style={inputStyle} value={note} onChange={e => setNote(e.target.value)} placeholder="예: 이번 시험 서술형에서 실수가 많았어요" /></Field>
         <button onClick={add} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={16} />결과 추가</button>
       </div>
+      )}
       <div className="rounded-2xl p-4" style={panel}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>테스트 기록 ({list.length}건)</h3>
@@ -1360,8 +1372,11 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
   const [items, setItems] = useState(ROUTINE_ITEM_DEFS.map(d => ({ ...d, result: d.kind === "count" ? "" : (d.kind === "choice" ? "" : false) })));
   const [testName, setTestName] = useState("");
   const [testScore, setTestScore] = useState("");
+  const [testType, setTestType] = useState("일일테스트");
+  const [testPassLine, setTestPassLine] = useState(String(PASS_RATE));
   const [comment, setComment] = useState("");
   const [editingId, setEditingId] = useState(null);
+  const resetTestFields = () => { setTestName(""); setTestScore(""); setTestType("일일테스트"); setTestPassLine(String(PASS_RATE)); };
   const students = studentsInScope(data.students, scopeClassGroups);
   const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
 
@@ -1401,22 +1416,29 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
     const score = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : 0;
     const routineId = editingId || uid();
     const existing = editingId ? data.routines.find(r => r.id === editingId) : null;
-    const routine = { id: routineId, studentId, date, items: itemsToSave, testName, testScore: testScore ? Number(testScore) : null, comment, score, createdAt: existing?.createdAt || new Date().toISOString() };
+    const routine = { id: routineId, studentId, date, items: itemsToSave, testName, testScore: testScore ? Number(testScore) : null, testType, testPassLine: Number(testPassLine) || PASS_RATE, comment, score, createdAt: existing?.createdAt || new Date().toISOString() };
 
     const attendance = data.attendance.find(a => a.studentId === studentId && a.date === date);
     const message = buildDailyReportText(student, date, itemsToSave, testName, testScore, comment, score, attendance);
-    const alerts = syncAlerts(data.alerts, `routine:${routineId}`, true, () => ({ studentId, kind: "오늘의 루틴", message }));
+    let alerts = syncAlerts(data.alerts, `routine:${routineId}`, true, () => ({ studentId, kind: "오늘의 루틴", message }));
     const routines = editingId ? data.routines.map(r => r.id === editingId ? routine : r) : [...data.routines, routine];
 
     // "오늘의 평가" 점수를 "테스트 기록"·"성적 추이"에도 반영되도록 data.tests에 함께 기록 (수정 시 같은 항목을 갱신)
     const linkedTestId = `routine-${routineId}`;
     let tests = data.tests.filter(t => t.id !== linkedTestId);
-    if (testName.trim() && testScore !== "") {
-      tests = [...tests, { id: linkedTestId, studentId, name: testName.trim(), testType: "일일테스트", date, score: Number(testScore), passLine: PASS_RATE, passed: Number(testScore) >= PASS_RATE, retest: false, note: "" }];
+    const hasTest = testName.trim() && testScore !== "";
+    const passLineNum = Number(testPassLine) || PASS_RATE;
+    if (hasTest) {
+      tests = [...tests, { id: linkedTestId, studentId, name: testName.trim(), testType, date, score: Number(testScore), passLine: passLineNum, passed: Number(testScore) >= passLineNum, retest: false, note: "" }];
     }
+    // 주간·월말·누적테스트 기준 미달이면 테스트 결과 탭에서 입력할 때처럼 "테스트 기준미달" 알림도 생성 (일일테스트는 루틴 알림에 점수가 들어가므로 생략)
+    alerts = syncAlerts(alerts, `test:${linkedTestId}`, !!hasTest && testType !== "일일테스트" && Number(testScore) < passLineNum, () => ({
+      studentId, kind: "테스트 기준미달",
+      message: `[루틴수학] ${student?.name || ""} 학생 [${testType}] "${testName.trim()}" 결과 ${Number(testScore)}점 (기준 ${passLineNum}점 미달)입니다.`,
+    }));
 
     setData({ ...data, routines, alerts, tests });
-    setTestName(""); setTestScore(""); setComment("");
+    resetTestFields(); setComment("");
     setItems(ROUTINE_ITEM_DEFS.map(d => ({ ...d, result: d.kind === "count" ? "" : (d.kind === "choice" ? "" : false) })));
     setEditingId(null);
   };
@@ -1431,16 +1453,19 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
     }));
     setTestName(r.testName || "");
     setTestScore(r.testScore != null ? String(r.testScore) : "");
+    const linked = data.tests.find(t => t.id === `routine-${r.id}`);
+    setTestType(r.testType || linked?.testType || "일일테스트");
+    setTestPassLine(String(r.testPassLine ?? linked?.passLine ?? PASS_RATE));
     setComment(r.comment || "");
   };
 
   const cancelEdit = () => {
     setEditingId(null);
-    setTestName(""); setTestScore(""); setComment("");
+    resetTestFields(); setComment("");
     setItems(ROUTINE_ITEM_DEFS.map(d => ({ ...d, result: d.kind === "count" ? "" : (d.kind === "choice" ? "" : false) })));
   };
 
-  const removeRoutine = (id) => setData({ ...data, routines: data.routines.filter(r => r.id !== id), alerts: data.alerts.filter(a => a.sourceKey !== `routine:${id}` || a.status !== "대기"), tests: data.tests.filter(t => t.id !== `routine-${id}`) });
+  const removeRoutine = (id) => setData({ ...data, routines: data.routines.filter(r => r.id !== id), alerts: data.alerts.filter(a => (a.sourceKey !== `routine:${id}` && a.sourceKey !== `test:routine-${id}`) || a.status !== "대기"), tests: data.tests.filter(t => t.id !== `routine-${id}`) });
 
   const mine = data.routines.filter(r => studentsInScope(data.students, scopeClassGroups).some(s => s.id === r.studentId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10);
 
@@ -1548,8 +1573,15 @@ function DailyRoutineTab({ data, setData, scopeClassGroups }) {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="오늘의 평가 (시험명)"><input className={inputCls} style={inputStyle} value={testName} onChange={e => setTestName(e.target.value)} placeholder="예: 함수 단원 TEST" /></Field>
+          <Field label="유형">
+            <select className={inputCls} style={inputStyle} value={testType} onChange={e => setTestType(e.target.value)}>
+              {["일일테스트", ...TEST_TYPES].map(t => <option key={t}>{t}</option>)}
+            </select>
+          </Field>
           <Field label="점수"><input type="number" className={inputCls} style={inputStyle} value={testScore} onChange={e => setTestScore(e.target.value)} /></Field>
+          <Field label="기준 점수"><input type="number" className={inputCls} style={inputStyle} value={testPassLine} onChange={e => setTestPassLine(e.target.value)} /></Field>
         </div>
+        <p className="text-[11px] -mt-1" style={{ color: "#8a7f5e" }}>시험명과 점수를 넣으면 "테스트 결과" 기록과 성적 추이에도 자동으로 들어가요.</p>
         <Field label="선생님 코멘트"><textarea rows={2} className={inputCls} style={inputStyle} value={comment} onChange={e => setComment(e.target.value)} placeholder="오늘 개념 이해는 좋았습니다..." /></Field>
         <div className="flex gap-2">
           <button onClick={save} className="px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}>{editingId ? <Pencil size={16} /> : <Plus size={16} />}{editingId ? "수정 저장" : "저장하고 알림 생성"}</button>
