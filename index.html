@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-28-149";
+const APP_VERSION = "2026-09-28-150";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -1928,6 +1928,18 @@ function ProgressChartGrid({ chart, month, editable, onChange, ownerLabel }) {
     else cur[cell] = NEXT_STATE[cur[cell] || ""];
     onChange({ ...chart, marks: { ...marks, [weekKey]: cur } });
   };
+  // 이 달의 빈칸을 한 번에 모두 초록으로 (이미 노랑으로 바꾼 칸은 그대로 둠)
+  const allCells = progressCellKeys(chart);
+  const fillAllGreen = () => {
+    const next = { ...marks };
+    weeks.forEach(w => {
+      const cur = { ...weekMap(w.key) };
+      allCells.forEach(c => { if (!cur[c]) cur[c] = "g"; });
+      next[w.key] = cur;
+    });
+    setEraser(false);
+    onChange({ ...chart, marks: next });
+  };
 
   const cellBorder = "1px solid #2b2417";
   const headStyle = { border: cellBorder, background: "#e8eef7", color: "#2b2417", padding: "4px 6px", fontWeight: 600 };
@@ -1952,6 +1964,11 @@ function ProgressChartGrid({ chart, month, editable, onChange, ownerLabel }) {
         <div className="flex items-center gap-2 text-[11px]" style={{ color: "#4a4332" }}>
           <span className="flex items-center gap-1"><span className="inline-block w-3.5 h-3.5" style={{ background: PROGRESS_YELLOW, border: "1px solid #999", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }} />이미 진행한 진도</span>
           <span className="flex items-center gap-1"><span className="inline-block w-3.5 h-3.5" style={{ background: PROGRESS_GREEN, border: "1px solid #999", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }} />이번 주 진도</span>
+          {editable && (
+            <button onClick={fillAllGreen} className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ background: PROGRESS_GREEN, color: "#fff" }}>
+              모두 초록
+            </button>
+          )}
           {editable && (
             <button onClick={() => setEraser(!eraser)} className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={eraser ? { background: "var(--coral)", color: "#fff" } : { border: "1px solid #ddcda0", color: "#5c543e", background: "#fffaf0" }}>
               🧽 지우개 {eraser ? "켜짐" : ""}
@@ -1982,7 +1999,7 @@ function ProgressChartGrid({ chart, month, editable, onChange, ownerLabel }) {
           </tbody>
         </table>
       </div>
-      {editable && <p className="text-[11px]" style={{ color: "#8a7f5e" }}>{eraser ? <b style={{ color: "var(--coral)" }}>지우개가 켜져 있어요. 누른 칸이 빈칸이 돼요. 다 지웠으면 지우개를 다시 눌러 꺼주세요.</b> : <>칸을 누를 때마다 <b style={{ color: PROGRESS_GREEN }}>초록</b> ↔ <b style={{ color: "#b39a00" }}>노랑</b>으로 바뀌어요. 잘못 누른 칸은 "지우개"를 켜고 누르면 빈칸이 돼요.</>}</p>}
+      {editable && <p className="text-[11px]" style={{ color: "#8a7f5e" }}>{eraser ? <b style={{ color: "var(--coral)" }}>지우개가 켜져 있어요. 누른 칸이 빈칸이 돼요. 다 지웠으면 지우개를 다시 눌러 꺼주세요.</b> : <><b>"모두 초록"</b>을 누르면 이 달의 빈칸이 한 번에 초록이 돼요. 그다음 노랑으로 바꿀 칸만 누르면 돼요. (다시 누르면 초록으로 돌아가요.) 잘못 칠한 칸은 "지우개"를 켜고 누르면 빈칸이 돼요.</>}</p>}
     </div>
   );
 }
