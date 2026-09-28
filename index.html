@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-28-148";
+const APP_VERSION = "2026-09-28-149";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -1997,11 +1997,11 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
   const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
   const ownerText = (c) => c.ownerType === "class" ? `반 · ${c.classGroup}` : `개별 · ${studentName(c.studentId)}`;
 
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(null); // 펼친 진도표 (null = 아직 안 고름 → 첫 번째를 펼침, "" = 모두 접음)
   const [month, setMonth] = useState(todayStr().slice(0, 7));
   const [form, setForm] = useState(null); // 새로 만들기·구조 수정 중인 진도표
   // 선택한 진도표가 없으면(새로고침 직후 등) 첫 번째 진도표를 자동으로 보여줌
-  const selected = visible.find(c => c.id === selectedId) || visible[0];
+  const selected = selectedId === null ? visible[0] : visible.find(c => c.id === selectedId);
 
   const blankForm = () => ({ id: "", title: "", textbook: "", ownerType: "class", classGroup: classOptions[0] || "", studentId: "", units: [{ id: uid(), name: "", cells: 2, labelsText: "" }] });
   const toForm = (c) => ({ ...c, units: (c.units || []).map(u => ({ ...u, labelsText: (u.labels || []).join(", ") })) });
@@ -2035,7 +2035,7 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
   const removeChart = (c) => {
     if (!window.confirm(`"${c.title}" (${ownerText(c)}) 진도표를 삭제할까요?\n표시한 진도 기록도 함께 지워져요.`)) return;
     setData({ ...data, progressCharts: charts.filter(x => x.id !== c.id) });
-    if (selectedId === c.id) setSelectedId("");
+    if (selected?.id === c.id) setSelectedId("");
   };
   const setUnit = (idx, patch) => setForm({ ...form, units: form.units.map((u, i) => i === idx ? { ...u, ...patch } : u) });
 
@@ -2046,12 +2046,18 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
           <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>진도표 ({visible.length})</h3>
           {!form && <button onClick={() => setForm(blankForm())} className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1" style={btnGold}><Plus size={14} />새 진도표</button>}
         </div>
-        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>반 진도표는 그 반 학생 모두의 월간 리포트에, 개별 진도표는 그 학생의 월간 리포트에만 나와요. 둘 다 있으면 둘 다 보여요. 교재가 여러 권이면 "교재 추가"로 교재마다 진도표를 따로 만들어 주세요.</p>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold" style={{ color: "#5c543e" }}>표시할 달</span>
+          <input type="month" className={inputCls} style={{ ...inputStyle, width: "auto" }} value={month} onChange={e => setMonth(e.target.value)} />
+        </div>
+        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>진도표를 누르면 아래로 펼쳐져서 바로 표시할 수 있어요. 반 진도표는 그 반 학생 모두의 월간 리포트에, 개별 진도표는 그 학생의 월간 리포트에만 나와요. 둘 다 있으면 둘 다 보여요. 교재가 여러 권이면 "교재 추가"로 교재마다 진도표를 따로 만들어 주세요.</p>
         {visible.length === 0 ? <EmptyState text="아직 만든 진도표가 없습니다." /> : (
           <ul className="flex flex-col gap-1.5">
             {visible.map(c => (
-              <li key={c.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg" style={{ background: c.id === selected?.id ? "#fde3c8" : "#efe6d0", cursor: "pointer" }} onClick={() => setSelectedId(c.id)}>
-                <div className="text-sm" style={{ color: "#2b2417" }}>
+              <li key={c.id} className="rounded-lg overflow-hidden" style={{ background: c.id === selected?.id ? "#fde3c8" : "#efe6d0", border: c.id === selected?.id ? "1.5px solid var(--gold)" : "1.5px solid transparent" }}>
+              <div className="flex items-center justify-between gap-2 p-2.5" style={{ cursor: "pointer" }} onClick={() => setSelectedId(c.id === selected?.id ? "" : c.id)}>
+                <div className="text-sm flex items-center" style={{ color: "#2b2417" }}>
+                  <ChevronLeft size={16} color="#8a7f5e" className="flex-shrink-0 mr-1" style={{ transform: c.id === selected?.id ? "rotate(-90deg)" : "rotate(180deg)", transition: "transform .15s" }} />
                   <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold mr-1.5" style={{ background: c.ownerType === "class" ? "#dfe7f3" : "#f3e1ef", color: "#4a4332" }}>{c.ownerType === "class" ? "반" : "개별"}</span>
                   <b>{c.title}</b> <span className="text-xs" style={{ color: "#7a6f52" }}>· {c.ownerType === "class" ? c.classGroup : studentName(c.studentId)}{c.textbook ? ` · ${c.textbook}` : ""}</span>
                 </div>
@@ -2060,6 +2066,12 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
                   <button onClick={() => setForm(toForm(c))} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }} title="구조 수정"><Pencil size={14} color="#5c543e" /></button>
                   <button onClick={() => removeChart(c)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }} title="삭제"><Trash2 size={14} color="var(--coral)" /></button>
                 </div>
+              </div>
+              {c.id === selected?.id && !form && (
+                <div className="p-3" style={{ background: "#fffaf0", borderTop: "1px solid #e4d8ba" }}>
+                  <ProgressChartGrid chart={c} month={month} editable onChange={saveChart} ownerLabel={ownerText(c)} />
+                </div>
+              )}
               </li>
             ))}
           </ul>
@@ -2108,15 +2120,6 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
         </div>
       )}
 
-      {selected && !form && (
-        <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>진도 표시</h3>
-            <input type="month" className={inputCls} style={{ ...inputStyle, width: "auto" }} value={month} onChange={e => setMonth(e.target.value)} />
-          </div>
-          <ProgressChartGrid chart={selected} month={month} editable onChange={saveChart} ownerLabel={ownerText(selected)} />
-        </div>
-      )}
     </div>
   );
 }
