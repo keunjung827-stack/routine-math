@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-28-141";
+const APP_VERSION = "2026-09-28-143";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -1862,6 +1862,246 @@ function ManualField({ label, value, onSave, placeholder, multiline, editable, m
   );
 }
 
+// ================= 진도표 (반별·개별) =================
+const PROGRESS_YELLOW = "#f1dc3c"; // 이미 진행한 진도
+const PROGRESS_GREEN = "#3d9a50";  // 이번 주 진도
+
+// 해당 월의 주 목록 (월 단위로 끊음). 월~일 기준으로 나누되 그 달 날짜만 포함.
+// 달 첫머리·끝에 2일 이하로 남는 조각은 옆 주에 붙임. 예) 8/1-8/2 → 8/1-8/9, 8/31 → 8/24-8/31
+function progressWeeksOfMonth(month) {
+  const [y, m] = month.split("-").map(Number);
+  const first = `${month}-01`;
+  const last = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+  const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+  const days = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000) + 1;
+  const segs = [];
+  for (let mon = mondayOf(first); mon <= last; mon = addDaysToDateStr(mon, 7)) {
+    const sun = addDaysToDateStr(mon, 6);
+    segs.push({ from: mon < first ? first : mon, to: sun > last ? last : sun });
+  }
+  if (segs.length > 1 && days(segs[0].from, segs[0].to) <= 2) { segs[1].from = segs[0].from; segs.shift(); }
+  if (segs.length > 1 && days(segs[segs.length - 1].from, segs[segs.length - 1].to) <= 2) { segs[segs.length - 2].to = segs[segs.length - 1].to; segs.pop(); }
+  return segs.map(g => ({ key: g.from, label: `${md(g.from)}-${md(g.to)}` }));
+}
+
+function progressCellKeys(chart) {
+  return (chart.units || []).flatMap(u => Array.from({ length: Math.max(1, Number(u.cells) || 1) }, (_, i) => `${u.id}:${i}`));
+}
+
+// 학생 리포트에 보여줄 진도표: 그 학생의 개별 진도표 + 학생이 속한 반의 진도표
+function progressChartsForStudent(data, student) {
+  if (!student) return [];
+  return (data.progressCharts || []).filter(c =>
+    (c.ownerType === "student" && c.studentId === student.id) ||
+    (c.ownerType === "class" && c.classGroup && c.classGroup === student.classGroup)
+  );
+}
+
+function ProgressChartGrid({ chart, month, editable, onChange, ownerLabel }) {
+  const weeks = progressWeeksOfMonth(month);
+  const units = chart.units || [];
+  const marks = chart.marks || {};
+  const baseline = new Set(chart.baseline || []);
+  const hasSubLabels = units.some(u => (u.labels || []).some(Boolean));
+
+  // 이 주보다 앞선 모든 주(이전 달 포함)에서 진행한 칸 + 처음 지정한 이전 진도 = 노랑
+  const doneBefore = (weekKey) => {
+    const set = new Set(baseline);
+    Object.keys(marks).forEach(k => { if (k < weekKey) (marks[k] || []).forEach(c => set.add(c)); });
+    return set;
+  };
+  const toggleWeek = (weekKey, cell) => {
+    const cur = new Set(marks[weekKey] || []);
+    cur.has(cell) ? cur.delete(cell) : cur.add(cell);
+    onChange({ ...chart, marks: { ...marks, [weekKey]: [...cur] } });
+  };
+  const toggleBaseline = (cell) => {
+    const cur = new Set(baseline);
+    cur.has(cell) ? cur.delete(cell) : cur.add(cell);
+    onChange({ ...chart, baseline: [...cur] });
+  };
+
+  const cellBorder = "1px solid #2b2417";
+  const headStyle = { border: cellBorder, background: "#e8eef7", color: "#2b2417", padding: "4px 6px", fontWeight: 600 };
+  const cellStyle = (color, clickable) => ({ border: cellBorder, background: color || "#fff", minWidth: 34, height: 30, cursor: clickable ? "pointer" : "default", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" });
+  const Row = ({ label, colorOf, onCell, labelStyle }) => (
+    <tr>
+      <td style={{ ...headStyle, background: "#f4f6fa", whiteSpace: "nowrap", fontWeight: 500, ...labelStyle }}>{label}</td>
+      {units.map(u => Array.from({ length: Math.max(1, Number(u.cells) || 1) }, (_, i) => {
+        const cell = `${u.id}:${i}`;
+        return <td key={cell} style={cellStyle(colorOf(cell), !!onCell)} onClick={onCell ? () => onCell(cell) : undefined} />;
+      }))}
+    </tr>
+  );
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 text-sm font-bold" style={{ color: "#2b2417" }}>
+          {ownerLabel && <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: "#e4d8ba", color: "#5c543e" }}>{ownerLabel}</span>}
+          {chart.title}{chart.textbook ? <span className="text-xs font-normal" style={{ color: "#7a6f52" }}> · {chart.textbook}</span> : null}
+        </div>
+        <div className="flex items-center gap-2 text-[11px]" style={{ color: "#4a4332" }}>
+          <span className="flex items-center gap-1"><span className="inline-block w-3.5 h-3.5" style={{ background: PROGRESS_YELLOW, border: "1px solid #999", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }} />이미 진행한 진도</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-3.5 h-3.5" style={{ background: PROGRESS_GREEN, border: "1px solid #999", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }} />이번 주 진도</span>
+        </div>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 12, width: "100%" }}>
+          <thead>
+            <tr>
+              <th rowSpan={hasSubLabels ? 2 : 1} style={{ ...headStyle, whiteSpace: "nowrap" }}>{chart.textbook || "주차"}</th>
+              {units.map(u => <th key={u.id} colSpan={Math.max(1, Number(u.cells) || 1)} style={headStyle}>{u.name}</th>)}
+            </tr>
+            {hasSubLabels && (
+              <tr>
+                {units.map(u => Array.from({ length: Math.max(1, Number(u.cells) || 1) }, (_, i) => (
+                  <th key={`${u.id}:${i}`} style={{ ...headStyle, fontSize: 10, fontWeight: 500 }}>{(u.labels || [])[i] || ""}</th>
+                )))}
+              </tr>
+            )}
+          </thead>
+          <tbody>
+            {editable && (
+              <Row label="이전까지" labelStyle={{ color: "#8a5a17", fontSize: 11 }} colorOf={c => baseline.has(c) ? PROGRESS_YELLOW : null} onCell={toggleBaseline} />
+            )}
+            {weeks.map(w => {
+              const before = doneBefore(w.key);
+              const green = new Set(marks[w.key] || []);
+              return <Row key={w.key} label={w.label} colorOf={c => green.has(c) ? PROGRESS_GREEN : before.has(c) ? PROGRESS_YELLOW : null} onCell={editable ? (c => toggleWeek(w.key, c)) : null} />;
+            })}
+          </tbody>
+        </table>
+      </div>
+      {editable && <p className="text-[11px]" style={{ color: "#8a7f5e" }}>칸을 누르면 그 주 진도(초록)로 표시돼요. 지난 주에 초록이었던 칸은 다음 주부터 자동으로 노랑이 돼요. "이전까지" 줄은 이 진도표를 쓰기 전에 이미 끝낸 부분을 노랑으로 지정할 때 써요.</p>}
+    </div>
+  );
+}
+
+function ProgressChartTab({ data, setData, scopeClassGroups }) {
+  const charts = data.progressCharts || [];
+  const scopedStudents = studentsInScope(data.students, scopeClassGroups);
+  const scopedIds = new Set(scopedStudents.map(s => s.id));
+  const classOptions = [...new Set([...CLASS_GROUPS, ...data.students.map(s => s.classGroup).filter(Boolean)])]
+    .filter(g => !scopeClassGroups || !scopeClassGroups.length || scopeClassGroups.includes(g));
+  const visible = charts.filter(c => c.ownerType === "class" ? classOptions.includes(c.classGroup) : scopedIds.has(c.studentId));
+  const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
+  const ownerText = (c) => c.ownerType === "class" ? `반 · ${c.classGroup}` : `개별 · ${studentName(c.studentId)}`;
+
+  const [selectedId, setSelectedId] = useState("");
+  const [month, setMonth] = useState(todayStr().slice(0, 7));
+  const [form, setForm] = useState(null); // 새로 만들기·구조 수정 중인 진도표
+  const selected = visible.find(c => c.id === selectedId);
+
+  const blankForm = () => ({ id: "", title: "", textbook: "", ownerType: "class", classGroup: classOptions[0] || "", studentId: "", units: [{ id: uid(), name: "", cells: 2, labelsText: "" }] });
+  const toForm = (c) => ({ ...c, units: (c.units || []).map(u => ({ ...u, labelsText: (u.labels || []).join(", ") })) });
+  const saveChart = (chart) => setData({ ...data, progressCharts: charts.map(c => c.id === chart.id ? chart : c) });
+
+  const submitForm = () => {
+    if (!form.title.trim()) return alert("과정 이름을 입력해 주세요.");
+    if (form.ownerType === "class" && !form.classGroup) return alert("반을 선택해 주세요.");
+    if (form.ownerType === "student" && !form.studentId) return alert("학생을 선택해 주세요.");
+    const units = form.units.filter(u => u.name.trim()).map(u => ({ id: u.id, name: u.name.trim(), cells: Math.min(20, Math.max(1, Number(u.cells) || 1)), labels: u.labelsText.split(",").map(x => x.trim()) }));
+    if (units.length === 0) return alert("단원을 하나 이상 입력해 주세요.");
+    const base = { title: form.title.trim(), textbook: form.textbook.trim(), ownerType: form.ownerType, classGroup: form.ownerType === "class" ? form.classGroup : "", studentId: form.ownerType === "student" ? form.studentId : "", units };
+    if (form.id) {
+      const prev = charts.find(c => c.id === form.id);
+      saveChart({ ...prev, ...base });
+    } else {
+      const chart = { id: uid(), ...base, baseline: [], marks: {}, createdAt: new Date().toISOString() };
+      setData({ ...data, progressCharts: [...charts, chart] });
+      setSelectedId(chart.id);
+    }
+    setForm(null);
+  };
+  const removeChart = (c) => {
+    if (!window.confirm(`"${c.title}" (${ownerText(c)}) 진도표를 삭제할까요?\n표시한 진도 기록도 함께 지워져요.`)) return;
+    setData({ ...data, progressCharts: charts.filter(x => x.id !== c.id) });
+    if (selectedId === c.id) setSelectedId("");
+  };
+  const setUnit = (idx, patch) => setForm({ ...form, units: form.units.map((u, i) => i === idx ? { ...u, ...patch } : u) });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>진도표 ({visible.length})</h3>
+          {!form && <button onClick={() => setForm(blankForm())} className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1" style={btnGold}><Plus size={14} />새 진도표</button>}
+        </div>
+        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>반 진도표는 그 반 학생 모두의 월간 리포트에, 개별 진도표는 그 학생의 월간 리포트에만 나와요. 둘 다 있으면 둘 다 보여요.</p>
+        {visible.length === 0 ? <EmptyState text="아직 만든 진도표가 없습니다." /> : (
+          <ul className="flex flex-col gap-1.5">
+            {visible.map(c => (
+              <li key={c.id} className="flex items-center justify-between gap-2 p-2.5 rounded-lg" style={{ background: c.id === selectedId ? "#fde3c8" : "#efe6d0", cursor: "pointer" }} onClick={() => setSelectedId(c.id)}>
+                <div className="text-sm" style={{ color: "#2b2417" }}>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold mr-1.5" style={{ background: c.ownerType === "class" ? "#dfe7f3" : "#f3e1ef", color: "#4a4332" }}>{c.ownerType === "class" ? "반" : "개별"}</span>
+                  <b>{c.title}</b> <span className="text-xs" style={{ color: "#7a6f52" }}>· {c.ownerType === "class" ? c.classGroup : studentName(c.studentId)}{c.textbook ? ` · ${c.textbook}` : ""}</span>
+                </div>
+                <div className="flex gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                  <button onClick={() => setForm(toForm(c))} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }} title="구조 수정"><Pencil size={14} color="#5c543e" /></button>
+                  <button onClick={() => removeChart(c)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }} title="삭제"><Trash2 size={14} color="var(--coral)" /></button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {form && (
+        <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ ...panel, border: "1.5px solid var(--gold)" }}>
+          <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>{form.id ? "진도표 구조 수정" : "새 진도표 만들기"}</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="과정 이름"><input className={inputCls} style={inputStyle} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="예: 중3-2 기본" /></Field>
+            <Field label="교재"><input className={inputCls} style={inputStyle} value={form.textbook} onChange={e => setForm({ ...form, textbook: e.target.value })} placeholder="예: 쎈" /></Field>
+            <Field label="대상">
+              <select className={inputCls} style={inputStyle} value={form.ownerType} onChange={e => setForm({ ...form, ownerType: e.target.value })}>
+                <option value="class">반 진도</option>
+                <option value="student">개별 진도</option>
+              </select>
+            </Field>
+            {form.ownerType === "class" ? (
+              <Field label="반">
+                <select className={inputCls} style={inputStyle} value={form.classGroup} onChange={e => setForm({ ...form, classGroup: e.target.value })}>
+                  {classOptions.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </Field>
+            ) : (
+              <Field label="학생"><StudentSelect students={scopedStudents} value={form.studentId} onChange={v => setForm({ ...form, studentId: v })} /></Field>
+            )}
+          </div>
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-semibold" style={{ color: "#5c543e" }}>단원 (왼쪽부터 순서대로)</span>
+            {form.units.map((u, i) => (
+              <div key={u.id} className="grid gap-2 items-end" style={{ gridTemplateColumns: "1.3fr 0.6fr 2fr auto" }}>
+                <Field label={i === 0 ? "단원명" : ""}><input className={inputCls} style={inputStyle} value={u.name} onChange={e => setUnit(i, { name: e.target.value })} placeholder="예: 삼각비" /></Field>
+                <Field label={i === 0 ? "칸 수" : ""}><input type="number" min={1} max={20} className={inputCls} style={inputStyle} value={u.cells} onChange={e => setUnit(i, { cells: e.target.value })} /></Field>
+                <Field label={i === 0 ? "칸 이름 (선택, 쉼표로 구분)" : ""}><input className={inputCls} style={inputStyle} value={u.labelsText} onChange={e => setUnit(i, { labelsText: e.target.value })} placeholder="예: 개념, A, B, C" /></Field>
+                <button onClick={() => setForm({ ...form, units: form.units.filter((_, j) => j !== i) })} className="p-2 rounded-md mb-0.5" style={{ background: "#efe3c8" }} disabled={form.units.length === 1}><X size={14} color="#8a7f5e" /></button>
+              </div>
+            ))}
+            <button onClick={() => setForm({ ...form, units: [...form.units, { id: uid(), name: "", cells: 2, labelsText: "" }] })} className="self-start px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1" style={{ border: "1px solid #ddcda0", color: "#5c543e" }}><Plus size={13} />단원 추가</button>
+            {form.id && <p className="text-[11px]" style={{ color: "#8a7f5e" }}>칸 수를 줄이면 오른쪽 끝 칸부터 없어지고, 그 칸에 표시했던 진도도 보이지 않게 돼요.</p>}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={submitForm} className="px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}>{form.id ? <Pencil size={16} /> : <Plus size={16} />}{form.id ? "수정 저장" : "만들기"}</button>
+            <button onClick={() => setForm(null)} className="px-4 py-2 rounded-lg text-sm" style={{ border: "1px solid #ddcda0", color: "#5c543e" }}>취소</button>
+          </div>
+        </div>
+      )}
+
+      {selected && !form && (
+        <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>진도 표시</h3>
+            <input type="month" className={inputCls} style={{ ...inputStyle, width: "auto" }} value={month} onChange={e => setMonth(e.target.value)} />
+          </div>
+          <ProgressChartGrid chart={selected} month={month} editable onChange={saveChart} ownerLabel={ownerText(selected)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MonthlyReportView({ data, setData, studentId, month, editable }) {
   const student = data.students.find(s => s.id === studentId);
   const key = `${studentId}:${month}`;
@@ -1887,7 +2127,7 @@ function MonthlyReportView({ data, setData, studentId, month, editable }) {
   return (
     <div id="print-area" className="flex flex-col gap-4">
       <div className="rounded-2xl p-6" style={{ background: "linear-gradient(180deg, #173226, #204233)", color: "#f4efe1" }}>
-        <div className="text-sm font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>루틴수학<span style={{ color: "var(--gold)" }}>학원</span></div>
+        <div className="text-sm font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>루틴<span style={{ color: "var(--gold)" }}>수학</span>학원</div>
         <div className="text-[10px] mt-1 tracking-wide" style={{ color: "#b9c9bd" }}>최고의 경쟁력은 습관이다</div>
         <div className="text-xl font-bold mt-5 leading-snug" style={{ fontFamily: "'Noto Serif KR', serif" }}>{student?.name || ""} 학생의 {Number(mm)}월 학습 리포트</div>
         <div className="text-xs mt-1.5" style={{ color: "#cddccf" }}>{student?.grade} · {student?.classGroup || "미배정"} · 담당 강사 {teacherName}</div>
@@ -1906,6 +2146,16 @@ function MonthlyReportView({ data, setData, studentId, month, editable }) {
 
       <div className="rounded-2xl p-4" style={panel}>
         <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif", color: "#173226" }}>이달의 학습 현황</h3>
+        {progressChartsForStudent(data, student).length > 0 && (
+          <div className="flex flex-col gap-4 mb-4">
+            {progressChartsForStudent(data, student).map(c => (
+              <ProgressChartGrid key={c.id} chart={c} month={month} editable={false} ownerLabel={c.ownerType === "class" ? "반 진도" : "개별 진도"} />
+            ))}
+          </div>
+        )}
+        {editable && progressChartsForStudent(data, student).length === 0 && (
+          <p className="text-[11px] mb-3" style={{ color: "#8a7f5e" }}>진도표는 "학습 기록 → 진도표"에서 만들면 여기에 표로 나와요.</p>
+        )}
         <div className="grid grid-cols-2 gap-3 mb-3">
           <ManualField label="이번 달 진도" value={manual.progress || ""} onSave={v => updateManual("progress", v)} editable={editable} placeholder="예: 이차방정식과 이차함수" />
           <ManualField label="사용 교재" value={manual.textbook || ""} onSave={v => updateManual("textbook", v)} editable={editable} placeholder="예: 개념플러스유형, 쎈" />
@@ -3293,14 +3543,14 @@ const COMPONENT_MAP = {
   sessions: SessionsTab, tests: TestsTab, seats: SeatsAdminTab,
   videos: VideosTab, routine: AdminRoutineTab, alerts: AlertsTab,
   rules: RulesTab, attendance: AttendanceTab, teachers: TeachersTab,
-  requests: RequestsTab, dailyRoutine: DailyRoutineTab, weeklyRoutine: WeeklyRoutineTab, announcements: AnnouncementsTab, monthlyReport: MonthlyReportBuilder,
+  requests: RequestsTab, dailyRoutine: DailyRoutineTab, weeklyRoutine: WeeklyRoutineTab, announcements: AnnouncementsTab, monthlyReport: MonthlyReportBuilder, progressChart: ProgressChartTab,
   eduPhilosophy: EduPhilosophyTab, curriculum: CurriculumTab, today: TodayChecklistTab, classSchedule: ClassScheduleTab, messages: MessagesTab, badges: BadgeStatusTab,
 };
 
 const GROUPS = [
   { id: "dashboard", label: "대시보드", icon: Home, accent: "#4c8c5f", tabs: [{ id: "dashboard", label: "요약" }, { id: "today", label: "오늘 할 일" }] },
   { id: "students", label: "학생 관리", icon: Users, accent: "#4c8c5f", tabs: [{ id: "students", label: "학생 명부" }, { id: "routine", label: "루틴체크" }] },
-  { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "monthlyReport", label: "월간 리포트" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }, { id: "badges", label: "칭찬배지" }] },
+  { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "monthlyReport", label: "월간 리포트" }, { id: "progressChart", label: "진도표" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }, { id: "badges", label: "칭찬배지" }] },
   { id: "schedule", label: "일정·자습실", icon: CalendarClock, accent: "#e2822f", tabs: [{ id: "sessions", label: "보강·클리닉" }, { id: "requests", label: "결석신고" }, { id: "seats", label: "자습실 관리" }] },
   { id: "classroom", label: "강의실", icon: BookOpen, accent: "#c65a1f", tabs: [{ id: "videos", label: "강의 업로드" }, { id: "curriculum", label: "커리큘럼" }, { id: "eduPhilosophy", label: "교육관" }, { id: "classSchedule", label: "반 시간표" }] },
   { id: "comm", label: "소통", icon: Bell, accent: "#c65a1f", tabs: [{ id: "alerts", label: "학부모 알림" }, { id: "requests", label: "요청함" }, { id: "messages", label: "1:1 문의" }, { id: "announcements", label: "공지사항 (휴원 등)" }] },
@@ -3781,6 +4031,7 @@ const TEACHER_TABS = [
   { id: "routine", label: "오늘의 루틴", icon: ClipboardList },
   { id: "weeklyRoutine", label: "주간 루틴", icon: TrendingUp },
   { id: "monthlyReport", label: "월간 리포트", icon: FileText },
+  { id: "progressChart", label: "진도표", icon: Calendar },
   { id: "homework", label: "숙제", icon: BookOpen },
   { id: "classSchedule", label: "반 시간표", icon: CalendarClock },
   { id: "tests", label: "테스트기록", icon: ClipboardCheck },
@@ -3827,6 +4078,7 @@ function TeacherHome({ data, setData, patchData, teacher, onLogout }) {
       {tab === "routine" && <DailyRoutineTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "weeklyRoutine" && <WeeklyRoutineTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "monthlyReport" && <MonthlyReportBuilder data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
+      {tab === "progressChart" && <ProgressChartTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "homework" && <HomeworkTab data={data} setData={setData} patchData={patchData} scopeClassGroups={teacher.classGroups} />}
       {tab === "classSchedule" && <ClassScheduleTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "tests" && <TestsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
