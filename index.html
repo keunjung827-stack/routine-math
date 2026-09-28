@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-28-150";
+const APP_VERSION = "2026-09-28-153";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -1820,22 +1820,37 @@ function allTestsTrendForMonth(data, studentId, monthStr) {
   return data.tests.filter(t => t.studentId === studentId && t.date.slice(0, 7) === monthStr).sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function TestTrendChart({ trend }) {
-  if (trend.length < 2) return <p className="text-xs" style={{ color: "#7a6f52" }}>점수 추이를 그리려면 이번 달 테스트가 2건 이상 필요해요.</p>;
+// 최근 N개월(이번 달 포함) 동안의 특정 유형 테스트
+function testsTrendRecentMonths(data, studentId, monthStr, types, months) {
+  const [y, m] = monthStr.split("-").map(Number);
+  const start = new Date(y, m - months, 1);
+  const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`;
+  return data.tests.filter(t => t.studentId === studentId && types.includes(t.testType || "일일테스트") && t.date.slice(0, 7) >= startStr && t.date.slice(0, 7) <= monthStr)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+const TREND_TYPE_COLORS = { "일일테스트": "#e2822f", "주간테스트": "#3d9a50", "월말테스트": "#3b6fb6", "누적테스트": "#8a4fb0" };
+
+function TestTrendChart({ trend, color, colorByType, dateFormat }) {
+  if (trend.length === 0) return <p className="text-xs" style={{ color: "#7a6f52" }}>기록이 없어요.</p>;
   const w = 600, h = 160, padL = 26, padR = 14, padT = 20, padB = 22;
-  const xStep = (w - padL - padR) / (trend.length - 1);
+  const n = trend.length;
+  const xFor = (i) => n === 1 ? (padL + w - padR) / 2 : padL + i * ((w - padL - padR) / (n - 1));
   const yFor = (score) => padT + (1 - Math.max(0, Math.min(100, score)) / 100) * (h - padT - padB);
-  const points = trend.map((t, i) => `${padL + i * xStep},${yFor(t.score)}`).join(" ");
+  const lineColor = color || "var(--gold)";
+  const dotColor = (t) => colorByType ? (TREND_TYPE_COLORS[t.testType || "일일테스트"] || lineColor) : lineColor;
+  const points = trend.map((t, i) => `${xFor(i)},${yFor(t.score)}`).join(" ");
+  const fmt = (d) => dateFormat === "month" ? `${Number(d.slice(5, 7))}월` : d.slice(5);
   return (
     <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h}>
       <line x1={padL} y1={padT} x2={padL} y2={h - padB} stroke="#e4d8ba" />
       <line x1={padL} y1={h - padB} x2={w - padR} y2={h - padB} stroke="#e4d8ba" />
-      <polyline points={points} fill="none" stroke="var(--gold)" strokeWidth="2.5" />
+      {n > 1 && <polyline points={points} fill="none" stroke={colorByType ? "#c9b98f" : lineColor} strokeWidth="2.5" />}
       {trend.map((t, i) => (
         <g key={t.id || i}>
-          <circle cx={padL + i * xStep} cy={yFor(t.score)} r="4" fill="var(--gold)" />
-          <text x={padL + i * xStep} y={yFor(t.score) - 9} fontSize="10" fill="#b3611b" textAnchor="middle" fontFamily="'Noto Sans KR', sans-serif">{t.score}</text>
-          <text x={padL + i * xStep} y={h - 5} fontSize="9" fill="#7a6f52" textAnchor="middle" fontFamily="'Noto Sans KR', sans-serif">{t.date.slice(5)}</text>
+          <circle cx={xFor(i)} cy={yFor(t.score)} r="4.5" fill={dotColor(t)} />
+          <text x={xFor(i)} y={yFor(t.score) - 9} fontSize="10" fill="#4a4332" textAnchor="middle" fontFamily="'Noto Sans KR', sans-serif">{t.score}</text>
+          <text x={xFor(i)} y={h - 5} fontSize="9" fill="#7a6f52" textAnchor="middle" fontFamily="'Noto Sans KR', sans-serif">{fmt(t.date)}</text>
         </g>
       ))}
     </svg>
@@ -2158,6 +2173,12 @@ function MonthlyReportView({ data, setData, studentId, month, editable }) {
   const monthlyTestComp = formalTestComparison(data, studentId, "월말테스트", month);
   const cumulativeTestComp = formalTestComparison(data, studentId, "누적테스트", month);
   const trend = allTestsTrendForMonth(data, studentId, month);
+  // 점수 변화 그래프: 일일+주간은 이번 달, 월말·누적은 한 달에 한두 번이라 최근 3개월
+  const trendGroups = [
+    { key: "dw", title: "일일·주간테스트 (이번 달)", list: trend.filter(t => ["일일테스트", "주간테스트"].includes(t.testType || "일일테스트")), colorByType: true },
+    { key: "monthly", title: "월말테스트 (최근 3개월)", list: testsTrendRecentMonths(data, studentId, month, ["월말테스트"], 3), color: TREND_TYPE_COLORS["월말테스트"] },
+    { key: "cumulative", title: "누적테스트 (최근 3개월)", list: testsTrendRecentMonths(data, studentId, month, ["누적테스트"], 3), color: TREND_TYPE_COLORS["누적테스트"] },
+  ].filter(g => g.list.length > 0);
   const teacherName = assignedTeacherName(data, student?.classGroup);
   const studyMinutes = monthlyStudyMinutes(data, studentId, month);
   const monthRoutinesForTable = data.routines.filter(r => r.studentId === studentId && r.date.slice(0, 7) === month).sort((a, b) => a.date.localeCompare(b.date));
@@ -2258,12 +2279,17 @@ function MonthlyReportView({ data, setData, studentId, month, editable }) {
                   const classItem = (r.items || []).find(it => it.key === "class");
                   const reviewItem = (r.items || []).find(it => it.key === "review");
                   const noteParts = [classItem?.note, reviewItem?.note].filter(Boolean);
+                  // 그날 테스트 점수: 루틴에 적은 점수뿐 아니라 "테스트 결과 → 추가 입력"으로 넣은 같은 날 시험도 함께 표시
+                  const dayTests = (data.tests || []).filter(t => t.studentId === studentId && t.date === r.date);
+                  const testCell = dayTests.length > 0
+                    ? dayTests.map(t => <div key={t.id}>{t.score}점{dayTests.length > 1 && <span className="font-normal text-[10px]" style={{ color: "#7a6f52" }}> {t.testType || "일일테스트"}</span>}</div>)
+                    : (r.testScore != null ? `${r.testScore}점` : "-");
                   return (
                     <tr key={r.id}>
                       <td className="py-2 pr-2 whitespace-nowrap align-top" style={{ color: "#7a6f52", borderBottom: "1px solid #e4d8ba" }}>{r.date}</td>
                       <td className="py-2 pr-2 align-top" style={{ borderBottom: "1px solid #e4d8ba" }}>{noteParts.join(" · ") || "-"}</td>
                       <td className="py-2 pr-2 align-top" style={{ color: "#7a6f52", borderBottom: "1px solid #e4d8ba" }}>{r.comment || "-"}</td>
-                      <td className="py-2 font-bold whitespace-nowrap align-top" style={{ color: "var(--gold)", borderBottom: "1px solid #e4d8ba" }}>{r.testScore != null ? `${r.testScore}점` : "-"}</td>
+                      <td className="py-2 font-bold whitespace-nowrap align-top" style={{ color: "var(--gold)", borderBottom: "1px solid #e4d8ba" }}>{testCell}</td>
                     </tr>
                   );
                 })}
@@ -2271,10 +2297,24 @@ function MonthlyReportView({ data, setData, studentId, month, editable }) {
             </table>
           </div>
         )}
-        {trend.length > 0 && (
-          <div className="mt-4">
-            <div className="text-xs mb-2" style={{ color: "#7a6f52" }}>테스트 점수 변화 (데일리·주간·월말·누적 전체)</div>
-            <TestTrendChart trend={trend} />
+        {trendGroups.length > 0 && (
+          <div className="mt-4 flex flex-col gap-4">
+            <div className="text-xs font-semibold" style={{ color: "#5c543e" }}>테스트 점수 변화</div>
+            {trendGroups.map(g => (
+              <div key={g.key}>
+                <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
+                  <span className="text-xs font-semibold" style={{ color: g.color || "#4a4332" }}>{g.title}</span>
+                  {g.colorByType && (
+                    <span className="flex items-center gap-2 text-[10px]" style={{ color: "#4a4332" }}>
+                      {["일일테스트", "주간테스트"].map(tp => (
+                        <span key={tp} className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: TREND_TYPE_COLORS[tp], WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }} />{tp.replace("테스트", "")}</span>
+                      ))}
+                    </span>
+                  )}
+                </div>
+                <TestTrendChart trend={g.list} color={g.color} colorByType={g.colorByType} />
+              </div>
+            ))}
           </div>
         )}
       </div>
