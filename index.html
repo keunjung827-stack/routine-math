@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-29-161";
+const APP_VERSION = "2026-09-29-162";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -2304,6 +2304,230 @@ async function exportElementToPdf(el, fileName) {
   }
 }
 
+// ================= 수업계획표 (반별·개별, 월 단위) =================
+function nextMonthStr(month) {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(y, m, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+// 반 시간표의 수업 요일로 그 달 수업 날짜 목록 만들기
+function classDatesInMonth(data, classGroup, month) {
+  const blocks = (data.classSchedules && data.classSchedules[classGroup]) || [];
+  const days = new Set(blocks.flatMap(b => b.days || []));
+  if (days.size === 0) return [];
+  const [y, m] = month.split("-").map(Number);
+  const last = new Date(y, m, 0).getDate();
+  const out = [];
+  for (let d = 1; d <= last; d++) {
+    const dt = new Date(y, m - 1, d);
+    const label = DAYS[(dt.getDay() + 6) % 7]; // DAYS는 월요일부터
+    if (days.has(label)) out.push(`${month}-${String(d).padStart(2, "0")}`);
+  }
+  return out;
+}
+function syllabiForStudent(data, student, month) {
+  if (!student) return [];
+  return (data.syllabi || []).filter(s => s.month === month && (
+    (s.ownerType === "student" && s.studentId === student.id) ||
+    (s.ownerType === "class" && s.classGroup && s.classGroup === student.classGroup)
+  )).sort((a, b) => (a.ownerType === b.ownerType ? 0 : a.ownerType === "class" ? -1 : 1));
+}
+const shortMD = (d) => d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : "";
+
+function SyllabusTable({ syllabus, ownerLabel }) {
+  const rows = [...(syllabus.rows || [])].filter(r => r.date || (r.plan || "").trim()).sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
+  const border = "1px solid #2b2417";
+  const th = { border, background: "#e8eef7", padding: "6px 8px", fontWeight: 600, color: "#2b2417", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" };
+  const td = { border, padding: "8px", verticalAlign: "middle", color: "#2b2417" };
+  return (
+    <div className="flex flex-col gap-1.5 avoid-break">
+      {ownerLabel && <div className="text-xs font-semibold" style={{ color: "#5c543e" }}>{ownerLabel}</div>}
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+          <thead>
+            <tr><th style={{ ...th, width: 70 }}>날짜</th><th style={{ ...th, width: 70 }}>반</th><th style={th}>수업 계획</th></tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr><td colSpan={3} style={{ ...td, textAlign: "center", color: "#8a7f5e" }}>작성된 계획이 없어요.</td></tr>
+            ) : rows.map(r => (
+              <tr key={r.id}>
+                <td style={{ ...td, textAlign: "center" }}>{shortMD(r.date)}</td>
+                <td style={{ ...td, textAlign: "center" }}>{r.classLabel || ""}</td>
+                <td style={{ ...td, whiteSpace: "pre-line", lineHeight: 1.6 }}>{r.plan || ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function SyllabusEditor({ data, syllabus, onSave, onDirtyChange }) {
+  const defaultClass = (syllabus.ownerType === "class" ? syllabus.classGroup : data.students.find(s => s.id === syllabus.studentId)?.classGroup) || "";
+  const shortClass = (g) => (g || "").split("-")[0] || g;
+  const [rows, setRows] = useState(syllabus.rows || []);
+  const savedJson = JSON.stringify(syllabus.rows || []);
+  const dirty = JSON.stringify(rows) !== savedJson;
+  useEffect(() => { if (!dirty) setRows(syllabus.rows || []); }, [savedJson]);
+  useEffect(() => { onDirtyChange && onDirtyChange(dirty); }, [dirty]);
+
+  const setRow = (id, patch) => setRows(rows.map(r => r.id === id ? { ...r, ...patch } : r));
+  const addRow = () => setRows([...rows, { id: uid(), date: "", classLabel: shortClass(defaultClass), plan: "" }]);
+  const removeRow = (id) => setRows(rows.filter(r => r.id !== id));
+  const autoFill = () => {
+    const dates = classDatesInMonth(data, defaultClass, syllabus.month);
+    if (dates.length === 0) { alert(`"${defaultClass || "이 반"}"의 수업 요일이 시간표에 없어요.\n반별 수업 시간표에 요일을 먼저 등록하거나, "줄 추가"로 직접 넣어주세요.`); return; }
+    const have = new Set(rows.map(r => r.date));
+    const added = dates.filter(d => !have.has(d)).map(d => ({ id: uid(), date: d, classLabel: shortClass(defaultClass), plan: "" }));
+    setRows([...rows, ...added].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999")));
+  };
+  const copyPrev = () => {
+    const [y, m] = syllabus.month.split("-").map(Number);
+    const pd = new Date(y, m - 2, 1);
+    const prevMonth = `${pd.getFullYear()}-${String(pd.getMonth() + 1).padStart(2, "0")}`;
+    const prev = (data.syllabi || []).find(s => s.month === prevMonth && s.ownerType === syllabus.ownerType && s.classGroup === syllabus.classGroup && s.studentId === syllabus.studentId);
+    if (!prev || !(prev.rows || []).length) { alert("지난달 수업계획표가 없어요."); return; }
+    alert("지난달 계획 내용을 이번 달 날짜 순서대로 채웠어요. 필요한 부분만 고쳐주세요.");
+    const sortedPrev = [...prev.rows].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    const sortedCur = [...rows].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
+    setRows(sortedCur.map((r, i) => (!(r.plan || "").trim() && sortedPrev[i]) ? { ...r, plan: sortedPrev[i].plan } : r));
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-1.5 flex-wrap">
+        <button onClick={autoFill} className="px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1" style={{ background: "#3d9a50", color: "#fff" }}><Calendar size={12} />수업 날짜 자동 채우기</button>
+        <button onClick={addRow} className="px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1" style={{ border: "1px solid #ddcda0", color: "#5c543e", background: "#fffaf0" }}><Plus size={12} />줄 추가</button>
+        <button onClick={copyPrev} className="px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1" style={{ border: "1px solid #ddcda0", color: "#5c543e", background: "#fffaf0" }}><Copy size={12} />지난달 계획 가져오기</button>
+      </div>
+      {rows.length === 0 ? <EmptyState text='"수업 날짜 자동 채우기"나 "줄 추가"로 시작하세요.' /> : (
+        <div className="flex flex-col gap-1.5">
+          {rows.map(r => (
+            <div key={r.id} className="grid gap-1.5 items-start" style={{ gridTemplateColumns: "118px 64px 1fr auto" }}>
+              <input type="date" className={inputCls} style={{ ...inputStyle, padding: "6px" }} value={r.date} onChange={e => setRow(r.id, { date: e.target.value })} />
+              <input className={inputCls} style={{ ...inputStyle, padding: "6px" }} value={r.classLabel || ""} onChange={e => setRow(r.id, { classLabel: e.target.value })} placeholder="반" />
+              <textarea className={inputCls} style={{ ...inputStyle, padding: "6px", minHeight: 44 }} rows={2} value={r.plan || ""} onChange={e => setRow(r.id, { plan: e.target.value })} placeholder={"예: 중3-2 일품 1단원 삼각비\n중2-2 일품 3단원 확률"} />
+              <button onClick={() => removeRow(r.id)} className="p-2 rounded-md" style={{ background: "#efe3c8" }} title="줄 삭제"><X size={13} color="#8a7f5e" /></button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={() => onSave(rows)} className="px-4 py-2 rounded-lg text-sm font-semibold" style={dirty ? { background: "#2b2417", color: "#fff" } : { background: "#fffaf0", color: "#2b2417", border: "1px solid #2b2417" }}>저장</button>
+        <span className="text-[11px] font-semibold" style={{ color: dirty ? "var(--coral)" : "#8a7f5e" }}>{dirty ? "● 저장하지 않은 내용이 있어요" : "✓ 저장됨"}</span>
+      </div>
+      <p className="text-[11px]" style={{ color: "#8a7f5e" }}>수업 계획 칸은 Enter로 줄을 나눠 교재별로 적을 수 있어요. 클리닉 같은 일정은 일정표에 들어가니 여기엔 수업 내용만 적으면 돼요.</p>
+    </div>
+  );
+}
+
+function SyllabusTab({ data, setData, scopeClassGroups }) {
+  const syllabi = data.syllabi || [];
+  const scopedStudents = studentsInScope(data.students, scopeClassGroups);
+  const scopedIds = new Set(scopedStudents.map(s => s.id));
+  const classOptions = [...new Set([...CLASS_GROUPS, ...data.students.map(s => s.classGroup).filter(Boolean)])]
+    .filter(g => !scopeClassGroups || !scopeClassGroups.length || scopeClassGroups.includes(g));
+  const studentName = (id) => data.students.find(s => s.id === id)?.name || "-";
+  const [month, setMonth] = useState(nextMonthStr(todayStr().slice(0, 7)));
+  const [openId, setOpenId] = useState(null);
+  const [dirty, setDirty] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [ownerType, setOwnerType] = useState("class");
+  const [classGroup, setClassGroup] = useState(classOptions[0] || "");
+  const [studentId, setStudentId] = useState("");
+
+  const visible = syllabi.filter(s => s.month === month && (s.ownerType === "class" ? classOptions.includes(s.classGroup) : scopedIds.has(s.studentId)))
+    .sort((a, b) => (a.ownerType === b.ownerType ? 0 : a.ownerType === "class" ? -1 : 1) || (a.classGroup || studentName(a.studentId)).localeCompare(b.classGroup || studentName(b.studentId)));
+  const open = openId === null ? visible[0] : visible.find(s => s.id === openId);
+  const confirmLeave = () => !dirty || window.confirm("저장하지 않은 수업계획이 있어요. 이동하면 사라져요. 계속할까요?");
+
+  const create = () => {
+    if (ownerType === "class" && !classGroup) return alert("반을 선택해 주세요.");
+    if (ownerType === "student" && !studentId) return alert("학생을 선택해 주세요.");
+    const exists = syllabi.find(s => s.month === month && s.ownerType === ownerType && (ownerType === "class" ? s.classGroup === classGroup : s.studentId === studentId));
+    if (exists) { alert("이 달에 이미 만든 수업계획표가 있어요. 목록에서 열어서 수정해 주세요."); setOpenId(exists.id); setAdding(false); return; }
+    const item = { id: uid(), month, ownerType, classGroup: ownerType === "class" ? classGroup : "", studentId: ownerType === "student" ? studentId : "", rows: [], createdAt: new Date().toISOString() };
+    setData({ ...data, syllabi: [...syllabi, item] });
+    setOpenId(item.id); setAdding(false); setDirty(false);
+  };
+  const saveRows = (id, rows) => setData({ ...data, syllabi: syllabi.map(s => s.id === id ? { ...s, rows, updatedAt: new Date().toISOString() } : s) });
+  const remove = (s) => {
+    if (!window.confirm(`${s.ownerType === "class" ? s.classGroup : studentName(s.studentId)}의 ${Number(s.month.slice(5))}월 수업계획표를 삭제할까요?`)) return;
+    setData({ ...data, syllabi: syllabi.filter(x => x.id !== s.id) });
+    if (open?.id === s.id) { setOpenId(""); setDirty(false); }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4 flex flex-col gap-3" style={panel}>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h3 className="font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>수업계획표 ({visible.length})</h3>
+          {!adding && <button onClick={() => setAdding(true)} className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1" style={btnGold}><Plus size={14} />새 수업계획표</button>}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold" style={{ color: "#5c543e" }}>계획할 달</span>
+          <input type="month" className={inputCls} style={{ ...inputStyle, width: "auto" }} value={month} onChange={e => { if (confirmLeave()) { setMonth(e.target.value); setOpenId(null); setDirty(false); } }} />
+        </div>
+        <p className="text-[11px]" style={{ color: "#8a7f5e" }}>여기서 만든 {Number(month.slice(5))}월 계획은 {Number(month.slice(5)) === 1 ? 12 : Number(month.slice(5)) - 1}월 월간 리포트의 "다음 달 학습 계획"에 표로 나와요. 반 계획은 그 반 학생 모두에게, 개별 계획은 그 학생에게만 나와요.</p>
+
+        {adding && (
+          <div className="rounded-xl p-3 flex flex-col gap-2" style={{ background: "#fff6e8", border: "1.5px solid var(--gold)" }}>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="대상">
+                <select className={inputCls} style={inputStyle} value={ownerType} onChange={e => setOwnerType(e.target.value)}>
+                  <option value="class">반 계획</option>
+                  <option value="student">개별 계획</option>
+                </select>
+              </Field>
+              {ownerType === "class" ? (
+                <Field label="반">
+                  <select className={inputCls} style={inputStyle} value={classGroup} onChange={e => setClassGroup(e.target.value)}>
+                    {classOptions.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                </Field>
+              ) : (
+                <Field label="학생"><StudentSelect students={scopedStudents} value={studentId} onChange={setStudentId} /></Field>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={create} className="px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={btnGold}><Plus size={15} />만들기</button>
+              <button onClick={() => setAdding(false)} className="px-4 py-2 rounded-lg text-sm" style={{ border: "1px solid #ddcda0", color: "#5c543e" }}>취소</button>
+            </div>
+          </div>
+        )}
+
+        {visible.length === 0 ? <EmptyState text={`${Number(month.slice(5))}월 수업계획표가 아직 없습니다.`} /> : (
+          <ul className="flex flex-col gap-1.5">
+            {visible.map(s => {
+              const isOpen = s.id === open?.id;
+              return (
+                <li key={s.id} className="rounded-lg overflow-hidden" style={{ background: isOpen ? "#fde3c8" : "#efe6d0", border: isOpen ? "1.5px solid var(--gold)" : "1.5px solid transparent" }}>
+                  <div className="flex items-center justify-between gap-2 p-2.5" style={{ cursor: "pointer" }} onClick={() => { if (!confirmLeave()) return; setDirty(false); setOpenId(isOpen ? "" : s.id); }}>
+                    <div className="text-sm flex items-center" style={{ color: "#2b2417" }}>
+                      <ChevronLeft size={16} color="#8a7f5e" className="flex-shrink-0 mr-1" style={{ transform: isOpen ? "rotate(-90deg)" : "rotate(180deg)", transition: "transform .15s" }} />
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold mr-1.5" style={{ background: s.ownerType === "class" ? "#dfe7f3" : "#f3e1ef", color: "#4a4332" }}>{s.ownerType === "class" ? "반" : "개별"}</span>
+                      <b>{s.ownerType === "class" ? s.classGroup : studentName(s.studentId)}</b>
+                      <span className="text-xs ml-1.5" style={{ color: "#7a6f52" }}>· {(s.rows || []).length}회</span>
+                    </div>
+                    <button onClick={e => { e.stopPropagation(); remove(s); }} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }} title="삭제"><Trash2 size={14} color="var(--coral)" /></button>
+                  </div>
+                  {isOpen && (
+                    <div className="p-3" style={{ background: "#fffaf0", borderTop: "1px solid #e4d8ba" }}>
+                      <SyllabusEditor key={s.id} data={data} syllabus={s} onSave={rows => saveRows(s.id, rows)} onDirtyChange={setDirty} />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const REPORT_MANUAL_FIELDS = ["progress", "textbook", "conceptComment", "testGood", "testImprove", "comment", "nextProgress", "nextFocus", "nextWeak", "nextGoal"];
 
 function MonthlyReportView({ data, setData, studentId, month, editable, onDirtyChange }) {
@@ -2376,6 +2600,8 @@ function MonthlyReportView({ data, setData, studentId, month, editable, onDirtyC
   const studyMinutes = monthlyStudyMinutes(data, studentId, month);
   const monthRoutinesForTable = data.routines.filter(r => r.studentId === studentId && r.date.slice(0, 7) === month).sort((a, b) => a.date.localeCompare(b.date));
   const [, mm] = month.split("-");
+  const nextMonth = nextMonthStr(month);
+  const nextSyllabi = syllabiForStudent(data, student, nextMonth);
 
   return (
     <>
@@ -2531,8 +2757,16 @@ function MonthlyReportView({ data, setData, studentId, month, editable, onDirtyC
 
       <div className="rounded-2xl p-4" style={panel}>
         <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif", color: "#173226" }}>다음 달 학습 계획</h3>
+        {nextSyllabi.length > 0 && (
+          <div className="flex flex-col gap-3 mb-3">
+            {nextSyllabi.map(s => <SyllabusTable key={s.id} syllabus={s} ownerLabel={`${Number(nextMonth.slice(5))}월 수업 계획${nextSyllabi.length > 1 ? (s.ownerType === "class" ? " (반)" : " (개별)") : ""}`} />)}
+          </div>
+        )}
+        {editable && nextSyllabi.length === 0 && (
+          <p className="text-[11px] mb-2 print-hide" style={{ color: "#8a7f5e" }}>"학습 기록 → 수업계획표"에서 {Number(nextMonth.slice(5))}월 계획을 만들면 여기에 표로 나와요.</p>
+        )}
         <div className="grid grid-cols-2 gap-3">
-          <ManualField label="다음 달 진도" value={manual.nextProgress || ""} onSave={v => updateManual("nextProgress", v)} editable={editable} placeholder="예: 삼각형의 성질" />
+          {nextSyllabi.length === 0 && <ManualField label="다음 달 진도" value={manual.nextProgress || ""} onSave={v => updateManual("nextProgress", v)} editable={editable} placeholder="예: 삼각형의 성질" />}
           <ManualField label="집중 학습 영역" value={manual.nextFocus || ""} onSave={v => updateManual("nextFocus", v)} editable={editable} placeholder="예: 서술형 풀이 과정" />
           <ManualField label="보완할 부분" value={manual.nextWeak || ""} onSave={v => updateManual("nextWeak", v)} editable={editable} placeholder="예: 도형 조건 정리" />
           <ManualField label="이번 달 목표" value={manual.nextGoal || ""} onSave={v => updateManual("nextGoal", v)} editable={editable} placeholder="예: 중간고사 90점 이상" />
@@ -3836,14 +4070,14 @@ const COMPONENT_MAP = {
   sessions: SessionsTab, tests: TestsTab, seats: SeatsAdminTab,
   videos: VideosTab, routine: AdminRoutineTab, alerts: AlertsTab,
   rules: RulesTab, attendance: AttendanceTab, teachers: TeachersTab,
-  requests: RequestsTab, dailyRoutine: DailyRoutineTab, weeklyRoutine: WeeklyRoutineTab, announcements: AnnouncementsTab, monthlyReport: MonthlyReportBuilder, progressChart: ProgressChartTab,
+  requests: RequestsTab, dailyRoutine: DailyRoutineTab, weeklyRoutine: WeeklyRoutineTab, announcements: AnnouncementsTab, monthlyReport: MonthlyReportBuilder, progressChart: ProgressChartTab, syllabus: SyllabusTab,
   eduPhilosophy: EduPhilosophyTab, curriculum: CurriculumTab, today: TodayChecklistTab, classSchedule: ClassScheduleTab, messages: MessagesTab, badges: BadgeStatusTab,
 };
 
 const GROUPS = [
   { id: "dashboard", label: "대시보드", icon: Home, accent: "#4c8c5f", tabs: [{ id: "dashboard", label: "요약" }, { id: "today", label: "오늘 할 일" }] },
   { id: "students", label: "학생 관리", icon: Users, accent: "#4c8c5f", tabs: [{ id: "students", label: "학생 명부" }, { id: "routine", label: "루틴체크" }] },
-  { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "monthlyReport", label: "월간 리포트" }, { id: "progressChart", label: "진도표" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }, { id: "badges", label: "칭찬배지" }] },
+  { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "monthlyReport", label: "월간 리포트" }, { id: "progressChart", label: "진도표" }, { id: "syllabus", label: "수업계획표" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }, { id: "badges", label: "칭찬배지" }] },
   { id: "schedule", label: "일정·자습실", icon: CalendarClock, accent: "#e2822f", tabs: [{ id: "sessions", label: "보강·클리닉" }, { id: "requests", label: "결석신고" }, { id: "seats", label: "자습실 관리" }] },
   { id: "classroom", label: "강의실", icon: BookOpen, accent: "#c65a1f", tabs: [{ id: "videos", label: "강의 업로드" }, { id: "curriculum", label: "커리큘럼" }, { id: "eduPhilosophy", label: "교육관" }, { id: "classSchedule", label: "반 시간표" }] },
   { id: "comm", label: "소통", icon: Bell, accent: "#c65a1f", tabs: [{ id: "alerts", label: "학부모 알림" }, { id: "requests", label: "요청함" }, { id: "messages", label: "1:1 문의" }, { id: "announcements", label: "공지사항 (휴원 등)" }] },
@@ -4325,6 +4559,7 @@ const TEACHER_TABS = [
   { id: "weeklyRoutine", label: "주간 루틴", icon: TrendingUp },
   { id: "monthlyReport", label: "월간 리포트", icon: FileText },
   { id: "progressChart", label: "진도표", icon: Calendar },
+  { id: "syllabus", label: "수업계획표", icon: FileText },
   { id: "homework", label: "숙제", icon: BookOpen },
   { id: "classSchedule", label: "반 시간표", icon: CalendarClock },
   { id: "tests", label: "테스트기록", icon: ClipboardCheck },
@@ -4372,6 +4607,7 @@ function TeacherHome({ data, setData, patchData, teacher, onLogout }) {
       {tab === "weeklyRoutine" && <WeeklyRoutineTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "monthlyReport" && <MonthlyReportBuilder data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "progressChart" && <ProgressChartTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
+      {tab === "syllabus" && <SyllabusTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "homework" && <HomeworkTab data={data} setData={setData} patchData={patchData} scopeClassGroups={teacher.classGroups} />}
       {tab === "classSchedule" && <ClassScheduleTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "tests" && <TestsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
