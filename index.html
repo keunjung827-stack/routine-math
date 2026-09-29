@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-29-164";
+const APP_VERSION = "2026-09-29-166";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -2290,9 +2290,7 @@ async function exportElementToPdf(el, fileName) {
       const y = H / 2 + 6;
       let x = 0;
       g.font = `700 26px ${FONT}`;
-      g.fillStyle = "#2b2417"; g.fillText("루틴수학학원", x, y); x += g.measureText("루틴수학학원").width;
-      g.font = `500 22px ${FONT}`; g.fillStyle = "#b8ab88"; g.fillText("  |  ", x, y); x += g.measureText("  |  ").width;
-      g.font = `700 22px ${FONT}`; g.fillStyle = "#e2822f"; g.fillText("수학상위권집합소", x, y);
+      g.fillStyle = "#e2822f"; g.fillText("수학상위권집합소", x, y);
       g.textAlign = "right"; g.font = `500 20px ${FONT}`;
       const pageText = `   ·   ${pageNo} / ${total}`;
       g.fillStyle = "#8a7f5e"; g.fillText(pageText, W, y);
@@ -2646,7 +2644,7 @@ function MonthlyReportView({ data, setData, studentId, month, editable, onDirtyC
     )}
     <div id="print-area" className="flex flex-col gap-4">
       <div className="rounded-2xl p-6" style={{ background: "linear-gradient(180deg, #173226, #204233)", color: "#f4efe1" }}>
-        <div className="text-sm font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>루틴<span style={{ color: "var(--gold)" }}>수학</span>학원</div>
+        <div className="text-sm font-bold" style={{ fontFamily: "'Noto Serif KR', serif", color: "var(--gold)" }}>루틴수학학원</div>
         <div className="text-[10px] mt-1 tracking-wide" style={{ color: "#b9c9bd" }}>최고의 경쟁력은 습관이다</div>
         <div className="text-xl font-bold mt-5 leading-snug" style={{ fontFamily: "'Noto Serif KR', serif" }}>{student?.name || ""} 학생의 {Number(mm)}월 학습 리포트</div>
         <div className="text-xs mt-1.5" style={{ color: "#cddccf" }}>{student?.grade} · {student?.classGroup || "미배정"} · 담당 강사 {teacherName}</div>
@@ -2800,7 +2798,7 @@ function MonthlyReportView({ data, setData, studentId, month, editable, onDirtyC
       {/* 인쇄 전용: 모든 페이지 하단 학원 문구 (tfoot처럼 매 페이지 아래 공간을 확보하고, 그 자리에 고정 문구) */}
       <div className="print-only print-footer-space"><div /></div>
       <div className="print-only print-footer" style={{ alignItems: "center", justifyContent: "space-between", borderTop: "1px solid #d9ccab", padding: "6px 0 4mm", fontSize: 11 }}>
-        <span><b style={{ color: "#2b2417", fontSize: 12 }}>루틴수학학원</b><span style={{ color: "#b8ab88", margin: "0 8px" }}>|</span><b style={{ color: "#e2822f" }}>수학상위권집합소</b></span>
+        <b style={{ color: "#e2822f", fontSize: 12 }}>수학상위권집합소</b>
         <span style={{ color: "#2b2417" }}>최고의 경쟁력은 습관이다</span>
       </div>
     </div>
