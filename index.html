@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-29-158";
+const APP_VERSION = "2026-09-29-159";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -2227,10 +2227,14 @@ function MonthlyReportView({ data, setData, studentId, month, editable, onDirtyC
   }, [editable, isDirty]);
   const manual = editable && draftKeyRef.current === key ? draft : saved;
   const updateManual = (field, value) => setDraft(d => ({ ...d, [field]: value }));
+  const [justSaved, setJustSaved] = useState(false);
   const saveDraft = () => {
     const next = { ...saved, ...draft, savedAt: new Date().toISOString() };
     setData({ ...data, monthlyReports: { ...(data.monthlyReports || {}), [key]: next } });
+    setJustSaved(true);
+    setTimeout(() => setJustSaved(false), 2000);
   };
+  const hasSavedContent = REPORT_MANUAL_FIELDS.some(f => (saved[f] || "").trim());
   const savePdf = () => {
     if (isDirty) saveDraft();
     setTimeout(() => window.print(), 50);
@@ -2263,10 +2267,10 @@ function MonthlyReportView({ data, setData, studentId, month, editable, onDirtyC
     {editable && (
       <div className="print-hide sticky top-0 rounded-xl px-3 py-2.5 mb-3 flex items-center justify-between gap-2 flex-wrap" style={{ background: "#fffaf0", border: `1.5px solid ${isDirty ? "var(--coral)" : "#e4d8ba"}`, zIndex: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
         <span className="text-xs font-semibold" style={{ color: isDirty ? "var(--coral)" : "#5c543e" }}>
-          {isDirty ? "● 저장하지 않은 내용이 있어요" : savedAtText ? `✓ 임시저장됨 (${savedAtText})` : "작성한 내용은 임시저장을 눌러 저장해요"}
+          {justSaved ? "✓ 저장했어요!" : isDirty ? "● 저장하지 않은 내용이 있어요" : savedAtText ? `✓ 임시저장됨 (${savedAtText})` : hasSavedContent ? "✓ 저장된 내용이 있어요" : "칸에 내용을 적고 임시저장을 누르세요"}
         </span>
         <div className="flex gap-2">
-          <button onClick={saveDraft} disabled={!isDirty} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={isDirty ? { background: "#2b2417", color: "#fff" } : { background: "#efe6d0", color: "#a89d84" }}>임시저장</button>
+          <button onClick={saveDraft} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={isDirty ? { background: "#2b2417", color: "#fff" } : { background: "#fffaf0", color: "#2b2417", border: "1px solid #2b2417" }}>임시저장</button>
           <button onClick={savePdf} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={btnGold}>PDF로 저장</button>
         </div>
       </div>
