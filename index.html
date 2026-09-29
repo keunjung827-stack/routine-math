@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-29-166";
+const APP_VERSION = "2026-09-29-167";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -2227,7 +2227,8 @@ async function exportElementToPdf(el, fileName) {
   // A4 세로, 여백 10mm. 폰에서도 PC와 같은 모양이 되도록 잠깐 폭을 고정해서 찍음
   const PAGE_W_MM = 210, PAGE_H_MM = 297, MARGIN_MM = 10;
   const FOOTER_MM = 10; // 페이지 하단 학원 문구 자리
-  const CONTENT_W_MM = PAGE_W_MM - MARGIN_MM * 2, CONTENT_H_MM = PAGE_H_MM - MARGIN_MM * 2 - FOOTER_MM;
+  const TOP_MM = MARGIN_MM + FOOTER_MM; // 위 여백을 아래(문구 자리 포함)와 같은 높이로
+  const CONTENT_W_MM = PAGE_W_MM - MARGIN_MM * 2, CONTENT_H_MM = PAGE_H_MM - TOP_MM - MARGIN_MM - FOOTER_MM;
   const CAPTURE_W = 760;
   const prev = { width: el.style.width, maxWidth: el.style.maxWidth };
   el.style.width = `${CAPTURE_W}px`; el.style.maxWidth = "none";
@@ -2309,7 +2310,7 @@ async function exportElementToPdf(el, fileName) {
       ctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
       if (i > 0) pdf.addPage();
       pdf.setFillColor(246, 241, 228); pdf.rect(0, 0, PAGE_W_MM, PAGE_H_MM, "F");
-      pdf.addImage(page.toDataURL("image/jpeg", 0.92), "JPEG", MARGIN_MM, MARGIN_MM, CONTENT_W_MM, sh / pxScale * (CONTENT_W_MM / CAPTURE_W));
+      pdf.addImage(page.toDataURL("image/jpeg", 0.92), "JPEG", MARGIN_MM, TOP_MM, CONTENT_W_MM, sh / pxScale * (CONTENT_W_MM / CAPTURE_W));
       pdf.addImage(makeFooter(i + 1, cuts.length), "PNG", MARGIN_MM, PAGE_H_MM - MARGIN_MM - 8, CONTENT_W_MM, 8);
     });
 
@@ -2643,6 +2644,8 @@ function MonthlyReportView({ data, setData, studentId, month, editable, onDirtyC
       </div>
     )}
     <div id="print-area" className="flex flex-col gap-4">
+      {/* 인쇄 전용: 모든 페이지 위쪽에 아래 문구 자리와 같은 높이의 여백 */}
+      <div className="print-only print-header-space"><div /></div>
       <div className="rounded-2xl p-6" style={{ background: "linear-gradient(180deg, #173226, #204233)", color: "#f4efe1" }}>
         <div className="text-sm font-bold" style={{ fontFamily: "'Noto Serif KR', serif", color: "var(--gold)" }}>루틴수학학원</div>
         <div className="text-[10px] mt-1 tracking-wide" style={{ color: "#b9c9bd" }}>최고의 경쟁력은 습관이다</div>
@@ -5790,7 +5793,7 @@ function App() {
 
   return (
     <div style={{ "--gold": "#e2822f", "--coral": "#c65a1f" }}>
-      <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; } @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 16px; } #print-area input, #print-area textarea { border: none !important; background: transparent !important; padding: 0 !important; resize: none; } .print-hide { display: none !important; } #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } #print-area .avoid-break, #print-area .rounded-2xl, #print-area .rounded-lg, #print-area .rounded-xl, #print-area tr, #print-area svg, #print-area table { break-inside: avoid; page-break-inside: avoid; } #print-area h3, #print-area h4 { break-after: avoid; page-break-after: avoid; } #print-area { display: table !important; } #print-area > * { margin-bottom: 16px; } #print-area .print-footer-space { display: table-footer-group !important; } #print-area .print-footer-space > div { height: 14mm; } #print-area .print-footer { display: flex !important; position: fixed; left: 16px; right: 16px; bottom: 0; } } .print-only { display: none; }`}</style>
+      <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; } @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 16px; } #print-area input, #print-area textarea { border: none !important; background: transparent !important; padding: 0 !important; resize: none; } .print-hide { display: none !important; } #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } #print-area .avoid-break, #print-area .rounded-2xl, #print-area .rounded-lg, #print-area .rounded-xl, #print-area tr, #print-area svg, #print-area table { break-inside: avoid; page-break-inside: avoid; } #print-area h3, #print-area h4 { break-after: avoid; page-break-after: avoid; } #print-area { display: table !important; } #print-area > * { margin-bottom: 16px; } #print-area .print-footer-space { display: table-footer-group !important; } #print-area .print-footer-space > div { height: 14mm; } #print-area .print-header-space { display: table-header-group !important; } #print-area .print-header-space > div { height: 14mm; } #print-area .print-footer { display: flex !important; position: fixed; left: 16px; right: 16px; bottom: 0; } } .print-only { display: none; }`}</style>
 
       {view === "gate" && <RoleGate onStudent={() => setView("studentLogin")} onTeacher={() => setView("teacherLogin")} onAdmin={() => setView("adminGate")} />}
 
