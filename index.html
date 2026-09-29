@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-29-159";
+const APP_VERSION = "2026-09-29-161";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -2204,6 +2204,106 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
   );
 }
 
+// ================= 월간 리포트 PDF 파일 만들기 (html2canvas + jsPDF, 필요할 때만 불러옴) =================
+const _scriptCache = {};
+function loadScriptOnce(src) {
+  if (!_scriptCache[src]) {
+    _scriptCache[src] = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src; s.async = true;
+      s.onload = resolve;
+      s.onerror = () => { delete _scriptCache[src]; reject(new Error("스크립트를 불러오지 못했어요: " + src)); };
+      document.head.appendChild(s);
+    });
+  }
+  return _scriptCache[src];
+}
+
+async function exportElementToPdf(el, fileName) {
+  await loadScriptOnce("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+  await loadScriptOnce("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
+  const { jsPDF } = window.jspdf;
+
+  // A4 세로, 여백 10mm. 폰에서도 PC와 같은 모양이 되도록 잠깐 폭을 고정해서 찍음
+  const PAGE_W_MM = 210, PAGE_H_MM = 297, MARGIN_MM = 10;
+  const CONTENT_W_MM = PAGE_W_MM - MARGIN_MM * 2, CONTENT_H_MM = PAGE_H_MM - MARGIN_MM * 2;
+  const CAPTURE_W = 760;
+  const prev = { width: el.style.width, maxWidth: el.style.maxWidth };
+  el.style.width = `${CAPTURE_W}px`; el.style.maxWidth = "none";
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  try {
+    const pageHpx = CONTENT_H_MM * (CAPTURE_W / CONTENT_W_MM); // 한 페이지에 들어가는 높이(화면 px)
+    const estH = el.scrollHeight;
+    const scale = Math.min(2, Math.sqrt(14000000 / (CAPTURE_W * Math.max(estH, 1)))); // 폰 브라우저 캔버스 한도 고려
+    let intervals = [], totalH = estH;
+
+    const canvas = await window.html2canvas(el, {
+      scale, backgroundColor: "#f6f1e4", useCORS: true, logging: false,
+      onclone: (doc) => {
+        const root = doc.getElementById(el.id);
+        if (!root) return;
+        root.querySelectorAll(".print-hide").forEach(n => n.remove());
+        // 입력칸은 글자로 바꿔서 찍음 (칸 테두리·잘림 없이)
+        root.querySelectorAll("input, textarea").forEach(inp => {
+          const d = doc.createElement("div");
+          d.textContent = inp.value || "-";
+          d.style.cssText = "white-space:pre-line;font-size:14px;line-height:1.6;color:#2b2417;";
+          inp.replaceWith(d);
+        });
+        // 페이지를 나눌 때 자르면 안 되는 덩어리들의 위치 (한 페이지보다 큰 건 제외)
+        const top0 = root.getBoundingClientRect().top;
+        totalH = root.scrollHeight;
+        intervals = [...root.querySelectorAll(".avoid-break, .rounded-2xl, .rounded-xl, .rounded-lg, tr, svg, table, h3")]
+          .map(n => { const r = n.getBoundingClientRect(); return [r.top - top0, r.bottom - top0]; })
+          .filter(([a, b]) => b - a > 1 && b - a < pageHpx * 0.95);
+      },
+    });
+
+    // 자를 위치 정하기: 페이지 끝이 덩어리 한가운데면, 그 위의 가장 가까운 덩어리 경계에서 자름
+    const inside = (y) => intervals.some(([a, b]) => a < y - 0.5 && y + 0.5 < b);
+    const cuts = [];
+    let start = 0;
+    while (start < totalH - 1) {
+      const end = start + pageHpx;
+      if (end >= totalH) { cuts.push([start, totalH]); break; }
+      let y = end;
+      if (inside(y)) {
+        const cand = intervals.flatMap(([a, b]) => [a, b]).filter(v => v > start + pageHpx * 0.3 && v <= end && !inside(v)).sort((p, q) => q - p);
+        if (cand.length) y = cand[0] - 2;
+      }
+      cuts.push([start, y]);
+      start = y;
+    }
+
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pxScale = canvas.width / CAPTURE_W;
+    cuts.forEach(([y0, y1], i) => {
+      const sy = Math.round(y0 * pxScale), sh = Math.max(1, Math.round((y1 - y0) * pxScale));
+      const page = document.createElement("canvas");
+      page.width = canvas.width; page.height = sh;
+      const ctx = page.getContext("2d");
+      ctx.fillStyle = "#f6f1e4"; ctx.fillRect(0, 0, page.width, page.height);
+      ctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
+      if (i > 0) pdf.addPage();
+      pdf.setFillColor(246, 241, 228); pdf.rect(0, 0, PAGE_W_MM, PAGE_H_MM, "F");
+      pdf.addImage(page.toDataURL("image/jpeg", 0.92), "JPEG", MARGIN_MM, MARGIN_MM, CONTENT_W_MM, sh / pxScale * (CONTENT_W_MM / CAPTURE_W));
+    });
+
+    // 폰에서는 공유 창(카카오톡 등)으로, PC에서는 파일로 저장
+    const blob = pdf.output("blob");
+    const file = new File([blob], fileName, { type: "application/pdf" });
+    const isTouch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+    if (isTouch && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: fileName }); return; }
+      catch (e) { if (e && e.name === "AbortError") return; }
+    }
+    pdf.save(fileName);
+  } finally {
+    el.style.width = prev.width; el.style.maxWidth = prev.maxWidth;
+  }
+}
+
 const REPORT_MANUAL_FIELDS = ["progress", "textbook", "conceptComment", "testGood", "testImprove", "comment", "nextProgress", "nextFocus", "nextWeak", "nextGoal"];
 
 function MonthlyReportView({ data, setData, studentId, month, editable, onDirtyChange }) {
@@ -2235,6 +2335,21 @@ function MonthlyReportView({ data, setData, studentId, month, editable, onDirtyC
     setTimeout(() => setJustSaved(false), 2000);
   };
   const hasSavedContent = REPORT_MANUAL_FIELDS.some(f => (saved[f] || "").trim());
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const downloadPdf = async () => {
+    if (pdfBusy) return;
+    if (isDirty) saveDraft();
+    setPdfBusy(true);
+    try {
+      const [yy, mo] = month.split("-");
+      const el = document.getElementById("print-area");
+      await exportElementToPdf(el, `${student?.name || "학생"}_${yy}년${Number(mo)}월_월간리포트.pdf`);
+    } catch (e) {
+      console.error("PDF 만들기 실패", e);
+      alert("PDF를 만들지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.\n계속 안 되면 \"인쇄\" 버튼으로 PDF 저장을 이용해 주세요.");
+    }
+    setPdfBusy(false);
+  };
   const savePdf = () => {
     if (isDirty) saveDraft();
     setTimeout(() => window.print(), 50);
@@ -2271,7 +2386,10 @@ function MonthlyReportView({ data, setData, studentId, month, editable, onDirtyC
         </span>
         <div className="flex gap-2">
           <button onClick={saveDraft} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={isDirty ? { background: "#2b2417", color: "#fff" } : { background: "#fffaf0", color: "#2b2417", border: "1px solid #2b2417" }}>임시저장</button>
-          <button onClick={savePdf} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={btnGold}>PDF로 저장</button>
+          <button onClick={savePdf} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ background: "#fffaf0", color: "#5c543e", border: "1px solid #ddcda0" }}>인쇄</button>
+          <button onClick={downloadPdf} disabled={pdfBusy} className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1" style={{ ...btnGold, opacity: pdfBusy ? 0.7 : 1 }}>
+            {pdfBusy ? <><Loader2 size={12} className="animate-spin" />PDF 만드는 중…</> : "PDF 파일 받기"}
+          </button>
         </div>
       </div>
     )}
@@ -2304,7 +2422,7 @@ function MonthlyReportView({ data, setData, studentId, month, editable, onDirtyC
           </div>
         )}
         {editable && progressChartsForStudent(data, student).length === 0 && (
-          <p className="text-[11px] mb-3" style={{ color: "#8a7f5e" }}>진도표는 "학습 기록 → 진도표"에서 만들면 여기에 표로 나와요.</p>
+          <p className="text-[11px] mb-3 print-hide" style={{ color: "#8a7f5e" }}>진도표는 "학습 기록 → 진도표"에서 만들면 여기에 표로 나와요.</p>
         )}
         <div className="grid grid-cols-2 gap-3 mb-3">
           <ManualField label="이번 달 진도" value={manual.progress || ""} onSave={v => updateManual("progress", v)} editable={editable} placeholder="예: 이차방정식과 이차함수" />
@@ -2396,7 +2514,7 @@ function MonthlyReportView({ data, setData, studentId, month, editable, onDirtyC
           </div>
         )}
         {trendAll.length > 0 && (
-          <div className="mt-4">
+          <div className="mt-4 avoid-break">
             <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
               <span className="text-xs font-semibold" style={{ color: "#5c543e" }}>테스트 점수 변화</span>
               <span className="flex items-center gap-2.5 text-[11px] flex-wrap" style={{ color: "#4a4332" }}>
@@ -5407,7 +5525,7 @@ function App() {
 
   return (
     <div style={{ "--gold": "#e2822f", "--coral": "#c65a1f" }}>
-      <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; } @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 16px; } #print-area input, #print-area textarea { border: none !important; background: transparent !important; padding: 0 !important; resize: none; } .print-hide { display: none !important; } #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } #print-area .avoid-break, #print-area .rounded-lg, #print-area .rounded-xl, #print-area tr, #print-area svg, #print-area table { break-inside: avoid; page-break-inside: avoid; } #print-area h3, #print-area h4 { break-after: avoid; page-break-after: avoid; } }`}</style>
+      <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; } @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 16px; } #print-area input, #print-area textarea { border: none !important; background: transparent !important; padding: 0 !important; resize: none; } .print-hide { display: none !important; } #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } #print-area .avoid-break, #print-area .rounded-2xl, #print-area .rounded-lg, #print-area .rounded-xl, #print-area tr, #print-area svg, #print-area table { break-inside: avoid; page-break-inside: avoid; } #print-area h3, #print-area h4 { break-after: avoid; page-break-after: avoid; } }`}</style>
 
       {view === "gate" && <RoleGate onStudent={() => setView("studentLogin")} onTeacher={() => setView("teacherLogin")} onAdmin={() => setView("adminGate")} />}
 
