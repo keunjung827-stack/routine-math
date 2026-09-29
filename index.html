@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-28-157";
+const APP_VERSION = "2026-09-29-158";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -1904,10 +1904,11 @@ function TestTrendChart({ trend, color, colorByType, dateFormat }) {
   );
 }
 
+// 월간 리포트 직접 입력 칸. 입력 내용은 리포트 화면의 임시 내용(draft)에 바로 반영되고, "임시저장"을 눌러야 서버에 저장됨.
 function ManualField({ label, value, onSave, placeholder, multiline, editable, minHeight }) {
-  const [local, setLocal] = useState(value || "");
-  useEffect(() => { setLocal(value || ""); }, [value]);
-  const commit = () => { if (local !== (value || "")) onSave(local); };
+  const local = value || "";
+  const setLocal = (v) => onSave(v);
+  const commit = () => {};
   return (
     <div>
       {label && <div className="text-xs mb-1" style={{ color: "#7a6f52" }}>{label}</div>}
@@ -2203,11 +2204,38 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
   );
 }
 
-function MonthlyReportView({ data, setData, studentId, month, editable }) {
+const REPORT_MANUAL_FIELDS = ["progress", "textbook", "conceptComment", "testGood", "testImprove", "comment", "nextProgress", "nextFocus", "nextWeak", "nextGoal"];
+
+function MonthlyReportView({ data, setData, studentId, month, editable, onDirtyChange }) {
   const student = data.students.find(s => s.id === studentId);
   const key = `${studentId}:${month}`;
-  const manual = (data.monthlyReports || {})[key] || {};
-  const updateManual = (field, value) => setData({ ...data, monthlyReports: { ...(data.monthlyReports || {}), [key]: { ...manual, [field]: value } } });
+  const saved = (data.monthlyReports || {})[key] || {};
+  // 편집 화면에서는 입력 내용을 먼저 draft에 모아두고 "임시저장" 때 한 번에 서버에 저장
+  const [draft, setDraft] = useState(saved);
+  const draftKeyRef = useRef(key);
+  const isDirty = draftKeyRef.current === key && REPORT_MANUAL_FIELDS.some(f => (draft[f] || "") !== (saved[f] || ""));
+  useEffect(() => {
+    // 학생·월이 바뀌었거나, 저장 안 한 변경이 없을 때 서버 내용이 바뀌면(다른 기기 저장 등) draft를 서버 내용으로 맞춤
+    if (draftKeyRef.current !== key || !isDirty) { draftKeyRef.current = key; setDraft(saved); }
+  }, [key, JSON.stringify(saved)]);
+  useEffect(() => { if (onDirtyChange) onDirtyChange(editable && isDirty); }, [isDirty, editable]);
+  useEffect(() => {
+    if (!editable || !isDirty) return;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [editable, isDirty]);
+  const manual = editable && draftKeyRef.current === key ? draft : saved;
+  const updateManual = (field, value) => setDraft(d => ({ ...d, [field]: value }));
+  const saveDraft = () => {
+    const next = { ...saved, ...draft, savedAt: new Date().toISOString() };
+    setData({ ...data, monthlyReports: { ...(data.monthlyReports || {}), [key]: next } });
+  };
+  const savePdf = () => {
+    if (isDirty) saveDraft();
+    setTimeout(() => window.print(), 50);
+  };
+  const savedAtText = saved.savedAt ? (() => { const d = new Date(saved.savedAt); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; })() : "";
 
   const plannerRate = monthlyPlannerTaskRate(data, studentId, month);
   const progressRate = progressExecutionRate(data, studentId, month);
@@ -2231,6 +2259,18 @@ function MonthlyReportView({ data, setData, studentId, month, editable }) {
   const [, mm] = month.split("-");
 
   return (
+    <>
+    {editable && (
+      <div className="print-hide sticky top-0 rounded-xl px-3 py-2.5 mb-3 flex items-center justify-between gap-2 flex-wrap" style={{ background: "#fffaf0", border: `1.5px solid ${isDirty ? "var(--coral)" : "#e4d8ba"}`, zIndex: 20, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+        <span className="text-xs font-semibold" style={{ color: isDirty ? "var(--coral)" : "#5c543e" }}>
+          {isDirty ? "● 저장하지 않은 내용이 있어요" : savedAtText ? `✓ 임시저장됨 (${savedAtText})` : "작성한 내용은 임시저장을 눌러 저장해요"}
+        </span>
+        <div className="flex gap-2">
+          <button onClick={saveDraft} disabled={!isDirty} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={isDirty ? { background: "#2b2417", color: "#fff" } : { background: "#efe6d0", color: "#a89d84" }}>임시저장</button>
+          <button onClick={savePdf} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={btnGold}>PDF로 저장</button>
+        </div>
+      </div>
+    )}
     <div id="print-area" className="flex flex-col gap-4">
       <div className="rounded-2xl p-6" style={{ background: "linear-gradient(180deg, #173226, #204233)", color: "#f4efe1" }}>
         <div className="text-sm font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>루틴<span style={{ color: "var(--gold)" }}>수학</span>학원</div>
@@ -2291,7 +2331,7 @@ function MonthlyReportView({ data, setData, studentId, month, editable }) {
       <div className="rounded-2xl p-4" style={panel}>
         <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif", color: "#173226" }}>월말·누적테스트 분석</h3>
         {[["월말테스트", monthlyTestComp], ["누적테스트", cumulativeTestComp]].map(([label, comp], i) => (
-          <div key={label} style={i > 0 ? { borderTop: "1px solid #e4d8ba", marginTop: 12, paddingTop: 12 } : {}}>
+          <div key={label} className="avoid-break" style={i > 0 ? { borderTop: "1px solid #e4d8ba", marginTop: 12, paddingTop: 12 } : {}}>
             <div className="text-xs mb-2" style={{ color: "#7a6f52" }}>{label}</div>
             <div className="flex gap-2">
               <div className="flex-1 text-center rounded-lg p-2.5" style={{ background: "#f6f1e4" }}><div className="text-[10px]" style={{ color: "#7a6f52" }}>이번 시험</div><div className="text-lg font-bold" style={{ fontFamily: "'Noto Serif KR', serif" }}>{comp.current ? `${comp.current.score}점` : "기록없음"}</div></div>
@@ -2377,6 +2417,7 @@ function MonthlyReportView({ data, setData, studentId, month, editable }) {
         </div>
       </div>
     </div>
+    </>
   );
 }
 
@@ -2385,18 +2426,21 @@ function MonthlyReportView({ data, setData, studentId, month, editable }) {
 function MonthlyReportBuilder({ data, setData, scopeClassGroups }) {
   const [studentId, setStudentId] = useState("");
   const [month, setMonth] = useState(todayStr().slice(0, 7));
+  const [reportDirty, setReportDirty] = useState(false);
   const scopedStudents = studentsInScope(data.students, scopeClassGroups);
+  // 저장 안 한 내용이 있을 때 학생·월을 바꾸면 확인
+  const guard = (fn) => (v) => {
+    if (reportDirty && !window.confirm("임시저장하지 않은 내용이 있어요.\n다른 학생·월로 넘어가면 작성한 내용이 사라져요. 계속할까요?")) return;
+    fn(v);
+  };
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-2xl p-4 grid grid-cols-2 gap-3 print-hide" style={panel}>
-        <Field label="학생 선택"><StudentSelect students={scopedStudents} value={studentId} onChange={setStudentId} /></Field>
-        <Field label="월 선택"><input type="month" className={inputCls} style={inputStyle} value={month} onChange={e => setMonth(e.target.value)} /></Field>
+        <Field label="학생 선택"><StudentSelect students={scopedStudents} value={studentId} onChange={guard(setStudentId)} /></Field>
+        <Field label="월 선택"><input type="month" className={inputCls} style={inputStyle} value={month} onChange={e => guard(setMonth)(e.target.value)} /></Field>
       </div>
       {!studentId ? <EmptyState text="학생을 선택하면 리포트가 표시됩니다." /> : (
-        <>
-          <button onClick={() => window.print()} className="w-full py-2.5 rounded-lg text-sm font-semibold" style={btnGold}>PDF로 저장</button>
-          <MonthlyReportView data={data} setData={setData} studentId={studentId} month={month} editable />
-        </>
+        <MonthlyReportView data={data} setData={setData} studentId={studentId} month={month} editable onDirtyChange={setReportDirty} />
       )}
     </div>
   );
@@ -5359,7 +5403,7 @@ function App() {
 
   return (
     <div style={{ "--gold": "#e2822f", "--coral": "#c65a1f" }}>
-      <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; } @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 16px; } #print-area input, #print-area textarea { border: none !important; background: transparent !important; padding: 0 !important; resize: none; } }`}</style>
+      <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; } @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 16px; } #print-area input, #print-area textarea { border: none !important; background: transparent !important; padding: 0 !important; resize: none; } .print-hide { display: none !important; } #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } #print-area .avoid-break, #print-area .rounded-lg, #print-area .rounded-xl, #print-area tr, #print-area svg, #print-area table { break-inside: avoid; page-break-inside: avoid; } #print-area h3, #print-area h4 { break-after: avoid; page-break-after: avoid; } }`}</style>
 
       {view === "gate" && <RoleGate onStudent={() => setView("studentLogin")} onTeacher={() => setView("teacherLogin")} onAdmin={() => setView("adminGate")} />}
 
