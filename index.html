@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-29-163";
+const APP_VERSION = "2026-09-29-164";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -2244,7 +2244,7 @@ async function exportElementToPdf(el, fileName) {
       onclone: (doc) => {
         const root = doc.getElementById(el.id);
         if (!root) return;
-        root.querySelectorAll(".print-hide").forEach(n => n.remove());
+        root.querySelectorAll(".print-hide, .print-only").forEach(n => n.remove());
         // 입력칸은 글자로 바꿔서 찍음 (칸 테두리·잘림 없이)
         root.querySelectorAll("input, textarea").forEach(inp => {
           const d = doc.createElement("div");
@@ -2290,11 +2290,13 @@ async function exportElementToPdf(el, fileName) {
       const y = H / 2 + 6;
       let x = 0;
       g.font = `700 26px ${FONT}`;
-      [["루틴", "#173226"], ["수학", "#e2822f"], ["학원", "#173226"]].forEach(([t, col]) => { g.fillStyle = col; g.fillText(t, x, y); x += g.measureText(t).width; });
+      g.fillStyle = "#2b2417"; g.fillText("루틴수학학원", x, y); x += g.measureText("루틴수학학원").width;
       g.font = `500 22px ${FONT}`; g.fillStyle = "#b8ab88"; g.fillText("  |  ", x, y); x += g.measureText("  |  ").width;
-      g.fillStyle = "#5c543e"; g.fillText("수학상위권집합소", x, y);
-      g.textAlign = "right"; g.font = `500 20px ${FONT}`; g.fillStyle = "#8a7f5e";
-      g.fillText(`최고의 경쟁력은 습관이다   ·   ${pageNo} / ${total}`, W, y);
+      g.font = `700 22px ${FONT}`; g.fillStyle = "#e2822f"; g.fillText("수학상위권집합소", x, y);
+      g.textAlign = "right"; g.font = `500 20px ${FONT}`;
+      const pageText = `   ·   ${pageNo} / ${total}`;
+      g.fillStyle = "#8a7f5e"; g.fillText(pageText, W, y);
+      g.fillStyle = "#2b2417"; g.fillText("최고의 경쟁력은 습관이다", W - g.measureText(pageText).width, y);
       return c.toDataURL("image/png");
     };
 
@@ -2794,6 +2796,12 @@ function MonthlyReportView({ data, setData, studentId, month, editable, onDirtyC
           <ManualField label="보완할 부분" value={manual.nextWeak || ""} onSave={v => updateManual("nextWeak", v)} editable={editable} placeholder="예: 도형 조건 정리" />
           <ManualField label="이번 달 목표" value={manual.nextGoal || ""} onSave={v => updateManual("nextGoal", v)} editable={editable} placeholder="예: 중간고사 90점 이상" />
         </div>
+      </div>
+      {/* 인쇄 전용: 모든 페이지 하단 학원 문구 (tfoot처럼 매 페이지 아래 공간을 확보하고, 그 자리에 고정 문구) */}
+      <div className="print-only print-footer-space"><div /></div>
+      <div className="print-only print-footer" style={{ alignItems: "center", justifyContent: "space-between", borderTop: "1px solid #d9ccab", padding: "6px 0 4mm", fontSize: 11 }}>
+        <span><b style={{ color: "#2b2417", fontSize: 12 }}>루틴수학학원</b><span style={{ color: "#b8ab88", margin: "0 8px" }}>|</span><b style={{ color: "#e2822f" }}>수학상위권집합소</b></span>
+        <span style={{ color: "#2b2417" }}>최고의 경쟁력은 습관이다</span>
       </div>
     </div>
     </>
@@ -5784,7 +5792,7 @@ function App() {
 
   return (
     <div style={{ "--gold": "#e2822f", "--coral": "#c65a1f" }}>
-      <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; } @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 16px; } #print-area input, #print-area textarea { border: none !important; background: transparent !important; padding: 0 !important; resize: none; } .print-hide { display: none !important; } #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } #print-area .avoid-break, #print-area .rounded-2xl, #print-area .rounded-lg, #print-area .rounded-xl, #print-area tr, #print-area svg, #print-area table { break-inside: avoid; page-break-inside: avoid; } #print-area h3, #print-area h4 { break-after: avoid; page-break-after: avoid; } }`}</style>
+      <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; } @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 16px; } #print-area input, #print-area textarea { border: none !important; background: transparent !important; padding: 0 !important; resize: none; } .print-hide { display: none !important; } #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } #print-area .avoid-break, #print-area .rounded-2xl, #print-area .rounded-lg, #print-area .rounded-xl, #print-area tr, #print-area svg, #print-area table { break-inside: avoid; page-break-inside: avoid; } #print-area h3, #print-area h4 { break-after: avoid; page-break-after: avoid; } #print-area { display: table !important; } #print-area > * { margin-bottom: 16px; } #print-area .print-footer-space { display: table-footer-group !important; } #print-area .print-footer-space > div { height: 14mm; } #print-area .print-footer { display: flex !important; position: fixed; left: 16px; right: 16px; bottom: 0; } } .print-only { display: none; }`}</style>
 
       {view === "gate" && <RoleGate onStudent={() => setView("studentLogin")} onTeacher={() => setView("teacherLogin")} onAdmin={() => setView("adminGate")} />}
 
