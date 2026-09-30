@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-30-182";
+const APP_VERSION = "2026-09-30-184";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -290,9 +290,32 @@ const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${Stri
 const STORAGE_KEY = "routine_math_unified_v2";
 const PASS_RATE = 70;
 const ADMIN_PIN = "2025";
-const GRADES = ["중1", "중2", "중3", "고1", "고2", "고3"];
+const GRADES = ["초4", "초5", "초6", "중1", "중2", "중3", "고1", "고2", "고3"];
 const CLASS_TRACKS = ["코어", "피크", "슈프림"];
-const CLASS_GROUPS = ["중1", "중2", "중3", "고1", "고2"].flatMap(g => CLASS_TRACKS.map(t => `${g}-${t}`));
+// 초등·중등·고등 모두 학년마다 코어·피크·슈프림 3개 반
+const CLASS_GROUPS = ["초4", "초5", "초6", "중1", "중2", "중3", "고1", "고2", "고3"].flatMap(g => CLASS_TRACKS.map(t => `${g}-${t}`));
+
+// 학년 없이 "코어/피크/슈프림"만 적힌 예전 반 이름 → "고3-코어/피크/슈프림"으로 정리 (한 번 바뀌면 다시 바뀌지 않음)
+function normalizeClassGroups(data) {
+  const fix = (g) => CLASS_TRACKS.includes(g) ? `고3-${g}` : g;
+  let changed = false;
+  const mark = (a, b) => { if (a !== b) changed = true; return b; };
+  const students = (data.students || []).map(s => s.classGroup && fix(s.classGroup) !== s.classGroup ? { ...s, classGroup: mark(s.classGroup, fix(s.classGroup)) } : s);
+  const teachers = (data.teachers || []).map(t => {
+    if (!Array.isArray(t.classGroups) || !t.classGroups.some(g => CLASS_TRACKS.includes(g))) return t;
+    changed = true;
+    return { ...t, classGroups: [...new Set(t.classGroups.map(fix))] };
+  });
+  let classSchedules = data.classSchedules;
+  if (classSchedules && Object.keys(classSchedules).some(k => CLASS_TRACKS.includes(k))) {
+    changed = true;
+    classSchedules = {};
+    Object.entries(data.classSchedules).forEach(([k, v]) => { const nk = fix(k); classSchedules[nk] = [...(classSchedules[nk] || []), ...(v || [])]; });
+  }
+  const progressCharts = (data.progressCharts || []).map(c => c.classGroup && CLASS_TRACKS.includes(c.classGroup) ? { ...c, classGroup: mark(c.classGroup, fix(c.classGroup)) } : c);
+  const syllabi = (data.syllabi || []).map(c => c.classGroup && CLASS_TRACKS.includes(c.classGroup) ? { ...c, classGroup: mark(c.classGroup, fix(c.classGroup)) } : c);
+  return changed ? { ...data, students, teachers, classSchedules, progressCharts, syllabi } : null;
+}
 const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
 const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 const TEST_TYPES = ["일일테스트", "주간테스트", "월말테스트", "누적테스트"];
@@ -6248,6 +6271,13 @@ function App() {
   const [view, setView] = useState("gate");
   const [studentId, setStudentId] = useState(null);
   const [teacherId, setTeacherId] = useState(null);
+
+  // 예전 반 이름(학년 없는 코어·피크·슈프림)을 고3 반으로 한 번 정리
+  useEffect(() => {
+    if (loading || loadError) return;
+    const fixed = normalizeClassGroups(data);
+    if (fixed) setData(fixed);
+  }, [loading, loadError, data.students, data.teachers, data.classSchedules, data.progressCharts, data.syllabi]);
 
   // 새 버전이 배포되면 자동으로 최신 코드를 다시 받아옴 (학생 기기에서 캐시 지우기 불필요)
   useEffect(() => {
