@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-30-179";
+const APP_VERSION = "2026-09-30-180";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -6388,6 +6388,8 @@ function App() {
 
   return (
     <div style={{ "--gold": "#e2822f", "--coral": "#c65a1f" }}>
+      {/* 현재 앱 버전 표시 (폰에서 새 버전이 적용됐는지 확인용) */}
+      <div className="print-hide" style={{ position: "fixed", right: 8, bottom: "calc(6px + env(safe-area-inset-bottom, 0px))", fontSize: 10, color: "#a89d84", opacity: 0.8, pointerEvents: "none", zIndex: 5 }}>v{APP_VERSION}</div>
       <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; } @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 16px; } #print-area input, #print-area textarea { border: none !important; background: transparent !important; padding: 0 !important; resize: none; } .print-hide { display: none !important; } #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } #print-area .avoid-break, #print-area .rounded-2xl, #print-area .rounded-lg, #print-area .rounded-xl, #print-area tr, #print-area svg, #print-area table { break-inside: avoid; page-break-inside: avoid; } #print-area h3, #print-area h4 { break-after: avoid; page-break-after: avoid; } #print-area { display: table !important; } #print-area > * { margin-bottom: 16px; } #print-area .print-footer-space { display: table-footer-group !important; } #print-area .print-footer-space > div { height: 14mm; } #print-area .print-header-space { display: table-header-group !important; } #print-area .print-header-space > div { height: 14mm; } #print-area .print-footer { display: flex !important; position: fixed; left: 16px; right: 16px; bottom: 0; } } .print-only { display: none; }`}</style>
 
       {view === "gate" && <RoleGate onStudent={() => setView("studentLogin")} onTeacher={() => setView("teacherLogin")} onAdmin={() => setView("adminGate")} />}
