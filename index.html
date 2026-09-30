@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-30-180";
+const APP_VERSION = "2026-09-30-181";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -2832,7 +2832,7 @@ function EffRowsEditor({ log, onSave, profileType, history }) {
   // 예전 하루 한 줄 형식(교재·분 칸)으로 저장된 기록도 줄 형식으로 바꿔서 불러옴
   const init = () => {
     const existing = effLogRows(log).map(r => ({ ...r, id: r.id || uid(), material: r.material || "", minutes: r.minutes ?? "", problems: r.problems ?? "", correct: r.correct ?? "", stuck: r.stuck || "" }));
-    return { goalProblems: log?.goalProblems ?? "", goalMinutes: log?.goalMinutes ?? "", goalAccuracy: log?.goalAccuracy ?? "", stuckLimit: isDeepLimit(log?.stuckLimit) ? "10" : "5", prescription: log?.prescription ?? "", rows: existing.length ? existing : Array.from({ length: 6 }, blankRow) };
+    return { goalProblems: log?.goalProblems ?? "", goalMinutes: log?.goalMinutes ?? "", goalAccuracy: log?.goalAccuracy ?? "", stuckLimit: isDeepLimit(log?.stuckLimit) ? "10" : "5", prescription: log?.prescription ?? "", rows: existing.length ? existing : Array.from({ length: 4 }, blankRow) };
   };
   const [f, setF] = useState(init);
   const [base, setBase] = useState(() => JSON.stringify(f));
