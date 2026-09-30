@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-09-30-178";
+const APP_VERSION = "2026-09-30-179";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -462,6 +462,46 @@ const mainStore = {
 const sameStamp = (a, b) => a === b || (!!a && !!b && Date.parse(a) === Date.parse(b));
 const POLL_INTERVAL_MS = 15000;
 
+// ===== 여러 기기 동시 사용 대비: 3방향 병합 =====
+// base = 이 기기가 마지막으로 서버에서 받은(또는 저장한) 데이터, ours = 이 기기가 저장하려는 데이터, theirs = 지금 서버 데이터
+// 이 기기가 실제로 바꾼 부분만 서버 최신 데이터 위에 얹어서, 다른 기기에서 저장한 내용이 지워지지 않게 함
+const _same = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b);
+const _isIdList = (v) => Array.isArray(v) && v.every(x => x && typeof x === "object" && !Array.isArray(x) && "id" in x);
+const _isPlainObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+function mergeValue(base, ours, theirs) {
+  if (_same(ours, base)) return theirs;      // 이 기기는 안 바꿈 → 서버 것
+  if (_same(theirs, base)) return ours;      // 서버는 안 바뀜 → 이 기기 것
+  if (_isIdList(ours) && _isIdList(theirs) && (base == null || _isIdList(base))) {
+    const b = new Map((base || []).map(x => [x.id, x]));
+    const o = new Map(ours.map(x => [x.id, x]));
+    const out = [];
+    const seen = new Set();
+    theirs.forEach(t => {
+      seen.add(t.id);
+      if (!o.has(t.id)) { if (b.has(t.id)) return; out.push(t); return; } // 이 기기에서 지운 항목은 제외, 다른 기기에서 새로 만든 항목은 유지
+      const ov = o.get(t.id), bv = b.get(t.id);
+      out.push(bv !== undefined && _same(ov, bv) ? t : (_isPlainObj(ov) && _isPlainObj(t) && _isPlainObj(bv) ? mergeValue(bv, ov, t) : ov));
+    });
+    ours.forEach(x => { if (!seen.has(x.id) && !b.has(x.id)) out.push(x); }); // 이 기기에서 새로 만든 항목
+    return out;
+  }
+  if (_isPlainObj(ours) && _isPlainObj(theirs)) {
+    const bo = _isPlainObj(base) ? base : {};
+    const out = { ...theirs };
+    new Set([...Object.keys(bo), ...Object.keys(ours)]).forEach(k => {
+      if (_same(ours[k], bo[k])) return;
+      if (!(k in ours)) { delete out[k]; return; }
+      out[k] = mergeValue(bo[k], ours[k], theirs[k]);
+    });
+    return out;
+  }
+  return ours; // 같은 값을 양쪽에서 다르게 바꾼 경우는 방금 저장하는 쪽 우선
+}
+function mergeData(base, ours, theirs) {
+  if (!base) return ours;
+  return mergeValue(base, ours, theirs);
+}
+
 function useAppData() {
   const [data, setDataState] = useState(emptyData());
   const [loading, setLoading] = useState(true);
@@ -472,6 +512,7 @@ function useAppData() {
   const savingRef = useRef(saving);
   const loadedOkRef = useRef(false);   // 서버에서 데이터를 제대로 받아온 적이 있는지 (없으면 저장 금지)
   const serverStampRef = useRef(null); // 마지막으로 받거나 저장한 서버 수정 시각
+  const baseRef = useRef(null);        // 마지막으로 받거나 저장한 서버 데이터 (병합 기준)
   useEffect(() => { dataRef.current = data; }, [data]);
   useEffect(() => { savingRef.current = saving; }, [saving]);
 
@@ -481,6 +522,7 @@ function useAppData() {
   const loadFull = async () => {
     const res = await mainStore.getFull();
     serverStampRef.current = res ? res.updatedAt : "";
+    baseRef.current = res && res.value ? parseValue(res.value) : emptyData();
     if (res && res.value) {
       const parsed = parseValue(res.value);
       if (JSON.stringify(parsed) !== JSON.stringify(dataRef.current)) {
@@ -525,13 +567,26 @@ function useAppData() {
     };
   }, []);
 
+  // 저장 직전에 서버가 그사이 바뀌었는지 확인하고, 바뀌었으면 이 기기에서 바꾼 부분만 서버 최신 데이터에 합쳐서 저장
   const writeToServer = async (next) => {
-    const json = JSON.stringify(next);
+    let toSave = next;
+    try {
+      const stamp = await mainStore.getUpdatedAt();
+      if (stamp !== null && !sameStamp(stamp, serverStampRef.current)) {
+        const res = await mainStore.getFull();
+        const theirs = res && res.value ? parseValue(res.value) : emptyData();
+        toSave = mergeData(baseRef.current, next, theirs);
+        dataRef.current = toSave;
+        setDataState(toSave);
+      }
+    } catch (e) { console.error("저장 전 최신 확인 실패 (이 기기 데이터로 저장)", e); }
+    const json = JSON.stringify(toSave);
     try {
       serverStampRef.current = await mainStore.save(json);
+      baseRef.current = toSave;
     } catch (e) {
       console.error("저장 실패, 재시도 중", e);
-      try { serverStampRef.current = await mainStore.save(json); }
+      try { serverStampRef.current = await mainStore.save(json); baseRef.current = toSave; }
       catch (e2) { console.error("저장 재시도 실패", e2); setSaveError(true); }
     }
   };
@@ -561,6 +616,8 @@ function useAppData() {
       if (stamp === null || !sameStamp(stamp, serverStampRef.current)) {
         const res = await mainStore.getFull();
         if (res && res.value) base = parseValue(res.value);
+        serverStampRef.current = res ? res.updatedAt : "";
+        baseRef.current = res && res.value ? base : emptyData();
       }
     } catch (e) { /* 최신 데이터를 못 받아오면 로컬 데이터 기준으로 진행 */ }
     const next = patchFn(base);
