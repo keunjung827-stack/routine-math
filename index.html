@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-10-01-185";
+const APP_VERSION = "2026-10-01-186";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -2679,13 +2679,22 @@ const EFF_TYPES = [
 const EFF_KIND_COLORS = { "개념": "#3b6fb6", "문제풀이": "#3d9a50", "오답정리": "#e2822f" };
 
 // "12번 8분, 18번 6분" → { count: 2, minutes: 14 }
+// 막힌 문제 칸 읽기. 두 가지 방식 모두 인식:
+//  ① 짧게: 18(5)24(7)29(4)36(5x)  → 번호(분), 못 풀면 분 뒤에 x
+//  ② 길게: 12번 6분, 18번 10분✕
 function parseStuck(text) {
   const t = (text || "").trim();
   if (!t) return { count: 0, minutes: 0, gaveUp: 0 };
-  const parts = t.split(/[,，/]+|\s{2,}|\n/).map(x => x.trim()).filter(Boolean);
-  let minutes = 0, gaveUp = 0;
-  parts.forEach(p => { const m = p.match(/(\d+)\s*분/); if (m) minutes += Number(m[1]); if (/[✕✗×xX]/.test(p)) gaveUp += 1; });
-  return { count: parts.length, minutes, gaveUp };
+  let count = 0, minutes = 0, gaveUp = 0;
+  const rest = t.replace(/(\d+)\s*[(（]\s*(\d*)\s*(?:분)?\s*([xX✕✗×])?\s*[)）]/g, (m, no, min, x) => {
+    count += 1; minutes += Number(min) || 0; if (x) gaveUp += 1; return " ";
+  });
+  rest.split(/[,，/]+|\s{2,}|\n/).map(x => x.trim()).filter(p => /\d|[✕✗×]/.test(p)).forEach(p => {
+    count += 1;
+    const m = p.match(/(\d+)\s*분/); if (m) minutes += Number(m[1]);
+    if (/[✕✗×xX]/.test(p)) gaveUp += 1;
+  });
+  return { count, minutes, gaveUp };
 }
 
 function effStats(rows) {
@@ -2920,7 +2929,7 @@ function EffRowsEditor({ log, onSave, profileType, history }) {
       <div style={{ overflowX: "auto" }}>
         <div style={{ minWidth: 640 }} className="flex flex-col gap-1.5">
           <div className="grid gap-1.5 text-[11px] font-semibold" style={{ gridTemplateColumns: "84px 1.6fr 58px 58px 58px 1.4fr 30px", color: "#5c543e" }}>
-            <span>구분</span><span>교재 / 범위</span><span>공부(분)</span><span>문제 수</span><span>맞은 수</span><span>★ 막힌 문제 (번호·걸린 분, 못 풀면 ✕ · 예: 12번 6분, 18번 10분✕)</span><span />
+            <span>구분</span><span>교재 / 범위</span><span>공부(분)</span><span>문제 수</span><span>맞은 수</span><span>★ 막힌 문제 (번호(분), 못 풀면 x · 예: 18(5) 24(7x))</span><span />
           </div>
           {f.rows.map(r => (
             <div key={r.id} className="grid gap-1.5 items-center" style={{ gridTemplateColumns: "84px 1.6fr 58px 58px 58px 1.4fr 30px" }}>
@@ -2929,7 +2938,10 @@ function EffRowsEditor({ log, onSave, profileType, history }) {
               <input className={inputCls} style={cell} inputMode="numeric" value={r.minutes} onChange={e => setRow(r.id, { minutes: num(e.target.value) })} />
               <input className={inputCls} style={cell} inputMode="numeric" value={r.problems} onChange={e => setRow(r.id, { problems: num(e.target.value) })} />
               <input className={inputCls} style={cell} inputMode="numeric" value={r.correct} onChange={e => setRow(r.id, { correct: num(e.target.value) })} />
-              <input className={inputCls} style={cell} value={r.stuck} onChange={e => setRow(r.id, { stuck: e.target.value })} placeholder="12번 6분, 18번 10분✕" />
+              <div className="flex flex-col gap-0.5">
+                <input className={inputCls} style={cell} value={r.stuck} onChange={e => setRow(r.id, { stuck: e.target.value })} placeholder="18(5)24(7)36(5x)" />
+                {(r.stuck || "").trim() && (() => { const p = parseStuck(r.stuck); return <span className="text-[10px] pl-1" style={{ color: "#8a7f5e" }}>★{p.count}개 · {p.minutes}분{p.gaveUp ? ` · ✕${p.gaveUp}` : ""}</span>; })()}
+              </div>
               <button onClick={() => setF({ ...f, rows: f.rows.filter(x => x.id !== r.id) })} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }} title="줄 삭제"><X size={13} color="#8a7f5e" /></button>
             </div>
           ))}
