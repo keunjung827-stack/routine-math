@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-10-01-192";
+const APP_VERSION = "2026-10-01-193";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -2621,6 +2621,9 @@ function SyllabusTable({ syllabus, ownerLabel }) {
 function SyllabusEditor({ data, syllabus, onSave, onDirtyChange }) {
   const defaultClass = (syllabus.ownerType === "class" ? syllabus.classGroup : data.students.find(s => s.id === syllabus.studentId)?.classGroup) || "";
   const shortClass = (g) => (g || "").split("-")[0] || g;
+  // 반 칸 기본값: 개별 계획표는 그 학생의 학년, 반 계획표는 반 이름의 학년
+  const ownerStudent = syllabus.ownerType === "student" ? data.students.find(s => s.id === syllabus.studentId) : null;
+  const rowLabel = (ownerStudent && ownerStudent.grade) || shortClass(defaultClass);
   const [rows, setRows] = useState(syllabus.rows || []);
   const savedJson = JSON.stringify(syllabus.rows || []);
   const dirty = JSON.stringify(rows) !== savedJson;
@@ -2628,19 +2631,19 @@ function SyllabusEditor({ data, syllabus, onSave, onDirtyChange }) {
   useEffect(() => { onDirtyChange && onDirtyChange(dirty); }, [dirty]);
 
   const setRow = (id, patch) => setRows(rows.map(r => r.id === id ? { ...r, ...patch } : r));
-  const addRow = () => setRows([...rows, { id: uid(), date: "", classLabel: shortClass(defaultClass), plan: "" }]);
+  const addRow = () => setRows([...rows, { id: uid(), date: "", classLabel: rowLabel, plan: "" }]);
   const removeRow = (id) => setRows(rows.filter(r => r.id !== id));
   const redateAll = () => {
     const dates = classDatesInMonth(data, defaultClass, syllabus.month);
     if (dates.length === 0) { alert(`"${defaultClass || "이 반"}"의 수업 요일이 시간표에 없어요.\n반별 수업 시간표에 요일을 먼저 등록해 주세요.`); return; }
     if (!window.confirm("수업 내용 순서는 그대로 두고, 날짜만 이 반 수업 날짜 순서대로 다시 맞출까요?")) return;
-    setRows(redateRows(rows, dates, shortClass(defaultClass)));
+    setRows(redateRows(rows, dates, rowLabel));
   };
   const autoFill = () => {
     const dates = classDatesInMonth(data, defaultClass, syllabus.month);
     if (dates.length === 0) { alert(`"${defaultClass || "이 반"}"의 수업 요일이 시간표에 없어요.\n반별 수업 시간표에 요일을 먼저 등록하거나, "줄 추가"로 직접 넣어주세요.`); return; }
     const have = new Set(rows.map(r => r.date));
-    const added = dates.filter(d => !have.has(d)).map(d => ({ id: uid(), date: d, classLabel: shortClass(defaultClass), plan: "" }));
+    const added = dates.filter(d => !have.has(d)).map(d => ({ id: uid(), date: d, classLabel: rowLabel, plan: "" }));
     setRows([...rows, ...added].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999")));
   };
   const copyPrev = () => {
@@ -2709,7 +2712,7 @@ function CopySyllabusToStudents({ syllabus, data, students, onCopy, onClose }) {
         <b className="text-sm" style={{ color: "#2b2417" }}>{Number(syllabus.month.slice(5))}월 수업계획표를 다른 학생에게 복사</b>
         <button onClick={onClose}><X size={15} color="#8a7f5e" /></button>
       </div>
-      <p className="text-[11px]" style={{ color: "#6b6250" }}>날짜와 수업 계획이 그대로 복사돼서 학생마다 개별 계획표가 생겨요. 반 칸은 그 학생의 반으로 바뀌어요. 복사한 뒤에는 학생별로 따로 고칠 수 있어요.</p>
+      <p className="text-[11px]" style={{ color: "#6b6250" }}>날짜와 수업 계획이 그대로 복사돼서 학생마다 개별 계획표가 생겨요. 반 칸은 그 학생의 학년으로 바뀌어요. 복사한 뒤에는 학생별로 따로 고칠 수 있어요.</p>
       <input className={inputCls} style={{ ...inputStyle, padding: "6px" }} value={q} onChange={e => setQ(e.target.value)} placeholder="이름이나 반으로 찾기" />
       <div className="flex flex-col gap-1 max-h-56 overflow-y-auto">
         {list.length === 0 ? <span className="text-xs" style={{ color: "#8a7f5e" }}>해당하는 학생이 없어요.</span> : list.map(s => {
@@ -2765,13 +2768,16 @@ function SyllabusTab({ data, setData, scopeClassGroups }) {
   const [copyFrom, setCopyFrom] = useState(null);
   const copyToStudents = (src, studentIds, redate) => {
     const short = (g) => (g || "").split("-")[0] || g || "";
-    const srcLabel = short(data.students.find(x => x.id === src.studentId)?.classGroup);
+    const gradeOf = (st) => (st && st.grade) || short(st?.classGroup);
+    const srcStudent = data.students.find(x => x.id === src.studentId);
+    const srcLabels = new Set([gradeOf(srcStudent), short(srcStudent?.classGroup), ...CLASS_TRACKS]);
     const now = new Date().toISOString();
     const noSchedule = [];
     const copies = studentIds.map(sid => {
       const st = data.students.find(x => x.id === sid);
-      const label = short(st?.classGroup);
-      let rows = (src.rows || []).map(r => ({ ...r, id: uid(), classLabel: !r.classLabel || r.classLabel === srcLabel ? label : r.classLabel }));
+      const label = gradeOf(st);
+      // 원래 학생의 학년(또는 예전 반 이름)이 적힌 칸은 받는 학생의 학년으로 바꿈
+      let rows = (src.rows || []).map(r => ({ ...r, id: uid(), classLabel: !r.classLabel || srcLabels.has(r.classLabel) ? label : r.classLabel }));
       if (redate) {
         const dates = classDatesInMonth(data, st?.classGroup, src.month);
         if (dates.length) rows = redateRows(rows, dates, label); else noSchedule.push(st?.name || "");
