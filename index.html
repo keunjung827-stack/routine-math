@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-10-01-189";
+const APP_VERSION = "2026-10-01-192";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -2630,6 +2630,12 @@ function SyllabusEditor({ data, syllabus, onSave, onDirtyChange }) {
   const setRow = (id, patch) => setRows(rows.map(r => r.id === id ? { ...r, ...patch } : r));
   const addRow = () => setRows([...rows, { id: uid(), date: "", classLabel: shortClass(defaultClass), plan: "" }]);
   const removeRow = (id) => setRows(rows.filter(r => r.id !== id));
+  const redateAll = () => {
+    const dates = classDatesInMonth(data, defaultClass, syllabus.month);
+    if (dates.length === 0) { alert(`"${defaultClass || "이 반"}"의 수업 요일이 시간표에 없어요.\n반별 수업 시간표에 요일을 먼저 등록해 주세요.`); return; }
+    if (!window.confirm("수업 내용 순서는 그대로 두고, 날짜만 이 반 수업 날짜 순서대로 다시 맞출까요?")) return;
+    setRows(redateRows(rows, dates, shortClass(defaultClass)));
+  };
   const autoFill = () => {
     const dates = classDatesInMonth(data, defaultClass, syllabus.month);
     if (dates.length === 0) { alert(`"${defaultClass || "이 반"}"의 수업 요일이 시간표에 없어요.\n반별 수업 시간표에 요일을 먼저 등록하거나, "줄 추가"로 직접 넣어주세요.`); return; }
@@ -2655,6 +2661,7 @@ function SyllabusEditor({ data, syllabus, onSave, onDirtyChange }) {
         <button onClick={autoFill} className="px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1" style={{ background: "#3d9a50", color: "#fff" }}><Calendar size={12} />수업 날짜 자동 채우기</button>
         <button onClick={addRow} className="px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1" style={{ border: "1px solid #ddcda0", color: "#5c543e", background: "#fffaf0" }}><Plus size={12} />줄 추가</button>
         <button onClick={copyPrev} className="px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1" style={{ border: "1px solid #ddcda0", color: "#5c543e", background: "#fffaf0" }}><Copy size={12} />지난달 계획 가져오기</button>
+        <button onClick={redateAll} className="px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1" style={{ border: "1px solid #ddcda0", color: "#5c543e", background: "#fffaf0" }}><Calendar size={12} />날짜만 다시 맞추기</button>
       </div>
       {rows.length === 0 ? <EmptyState text='"수업 날짜 자동 채우기"나 "줄 추가"로 시작하세요.' /> : (
         <div className="flex flex-col gap-1.5">
@@ -2673,6 +2680,54 @@ function SyllabusEditor({ data, syllabus, onSave, onDirtyChange }) {
         <span className="text-[11px] font-semibold" style={{ color: dirty ? "var(--coral)" : "#8a7f5e" }}>{dirty ? "● 저장하지 않은 내용이 있어요" : "✓ 저장됨"}</span>
       </div>
       <p className="text-[11px]" style={{ color: "#8a7f5e" }}>수업 계획 칸은 Enter로 줄을 나눠 교재별로 적을 수 있어요. 클리닉 같은 일정은 일정표에 들어가니 여기엔 수업 내용만 적으면 돼요.</p>
+    </div>
+  );
+}
+
+// 개별 수업계획표를 같은 교재·같은 계획인 다른 학생들에게 복사
+// 수업 내용 순서는 그대로 두고, 날짜만 그 반 수업 요일 순서대로 다시 맞춤
+// 계획의 첫 날짜가 있는 주부터 시작 (예: 10/23부터 시작한 계획이면 그 주 월요일 이후 첫 수업일부터)
+// 반 수업 날짜가 모자라면 남는 계획 줄은 날짜를 비워둠
+function redateRows(rows, dates, label) {
+  const sorted = [...rows].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
+  const first = sorted.find(r => r.date)?.date;
+  const from = first ? mondayOf(first) : "";
+  const usable = dates.filter(d => d >= from);
+  return sorted.map((r, i) => ({ ...r, date: usable[i] || "" }));
+}
+
+function CopySyllabusToStudents({ syllabus, data, students, onCopy, onClose }) {
+  const [picked, setPicked] = useState([]);
+  const [q, setQ] = useState("");
+  const [redate, setRedate] = useState(true);
+  const has = (sid) => (data.syllabi || []).some(x => x.month === syllabus.month && x.ownerType === "student" && x.studentId === sid);
+  const list = students.filter(s => s.id !== syllabus.studentId && (!q.trim() || s.name.includes(q.trim()) || (s.classGroup || "").includes(q.trim())));
+  const toggle = (id) => setPicked(picked.includes(id) ? picked.filter(x => x !== id) : [...picked, id]);
+  return (
+    <div className="rounded-xl p-3 mb-2 flex flex-col gap-2" style={{ background: "#fff6e8", border: "1.5px solid var(--gold)" }}>
+      <div className="flex items-center justify-between">
+        <b className="text-sm" style={{ color: "#2b2417" }}>{Number(syllabus.month.slice(5))}월 수업계획표를 다른 학생에게 복사</b>
+        <button onClick={onClose}><X size={15} color="#8a7f5e" /></button>
+      </div>
+      <p className="text-[11px]" style={{ color: "#6b6250" }}>날짜와 수업 계획이 그대로 복사돼서 학생마다 개별 계획표가 생겨요. 반 칸은 그 학생의 반으로 바뀌어요. 복사한 뒤에는 학생별로 따로 고칠 수 있어요.</p>
+      <input className={inputCls} style={{ ...inputStyle, padding: "6px" }} value={q} onChange={e => setQ(e.target.value)} placeholder="이름이나 반으로 찾기" />
+      <div className="flex flex-col gap-1 max-h-56 overflow-y-auto">
+        {list.length === 0 ? <span className="text-xs" style={{ color: "#8a7f5e" }}>해당하는 학생이 없어요.</span> : list.map(s => {
+          const dup = has(s.id);
+          return (
+            <label key={s.id} className="flex items-center gap-2 text-sm px-2 py-1 rounded-md" style={{ background: picked.includes(s.id) ? "#fde3c8" : "transparent", color: dup ? "#a89d84" : "#2b2417", cursor: dup ? "default" : "pointer" }}>
+              <input type="checkbox" disabled={dup} checked={picked.includes(s.id)} onChange={() => toggle(s.id)} />
+              {s.name} <span className="text-xs" style={{ color: "#8a7f5e" }}>{s.grade}{s.classGroup ? ` · ${s.classGroup}` : ""}</span>
+              {dup && <span className="text-[10px]">· 이 달 개별 계획표 있음</span>}
+            </label>
+          );
+        })}
+      </div>
+      <label className="flex items-start gap-2 text-xs" style={{ color: "#4a4332" }}>
+        <input type="checkbox" className="mt-0.5" checked={redate} onChange={e => setRedate(e.target.checked)} />
+        <span><b>날짜는 각 학생 반의 수업 요일로 다시 맞추기</b><br /><span style={{ color: "#8a7f5e" }}>수업 내용 순서는 그대로, 날짜만 그 학생 반의 수업 날짜 순서대로 바뀌어요 (계획이 시작하는 주부터). 반 시간표에 요일이 없는 학생은 날짜를 그대로 복사해요.</span></span>
+      </label>
+      <button disabled={picked.length === 0} onClick={() => onCopy(picked, redate)} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={{ ...btnGold, opacity: picked.length ? 1 : 0.5 }}><Copy size={15} />{picked.length}명에게 복사</button>
     </div>
   );
 }
@@ -2707,6 +2762,26 @@ function SyllabusTab({ data, setData, scopeClassGroups }) {
     setOpenId(item.id); setAdding(false); setDirty(false);
   };
   const saveRows = (id, rows) => setData({ ...data, syllabi: syllabi.map(s => s.id === id ? { ...s, rows, updatedAt: new Date().toISOString() } : s) });
+  const [copyFrom, setCopyFrom] = useState(null);
+  const copyToStudents = (src, studentIds, redate) => {
+    const short = (g) => (g || "").split("-")[0] || g || "";
+    const srcLabel = short(data.students.find(x => x.id === src.studentId)?.classGroup);
+    const now = new Date().toISOString();
+    const noSchedule = [];
+    const copies = studentIds.map(sid => {
+      const st = data.students.find(x => x.id === sid);
+      const label = short(st?.classGroup);
+      let rows = (src.rows || []).map(r => ({ ...r, id: uid(), classLabel: !r.classLabel || r.classLabel === srcLabel ? label : r.classLabel }));
+      if (redate) {
+        const dates = classDatesInMonth(data, st?.classGroup, src.month);
+        if (dates.length) rows = redateRows(rows, dates, label); else noSchedule.push(st?.name || "");
+      }
+      return { ...src, id: uid(), ownerType: "student", studentId: sid, classGroup: "", createdAt: now, updatedAt: now, rows };
+    });
+    setData({ ...data, syllabi: [...syllabi, ...copies] });
+    setCopyFrom(null);
+    alert(`${copies.length}명에게 ${Number(src.month.slice(5))}월 수업계획표를 복사했어요.` + (noSchedule.length ? `\n\n반 시간표에 수업 요일이 없어서 날짜를 그대로 복사한 학생: ${noSchedule.join(", ")}` : ""));
+  };
   const remove = (s) => {
     if (!window.confirm(`${s.ownerType === "class" ? s.classGroup : studentName(s.studentId)}의 ${Number(s.month.slice(5))}월 수업계획표를 삭제할까요?`)) return;
     setData({ ...data, syllabi: syllabi.filter(x => x.id !== s.id) });
@@ -2765,8 +2840,16 @@ function SyllabusTab({ data, setData, scopeClassGroups }) {
                       <b>{s.ownerType === "class" ? s.classGroup : studentName(s.studentId)}</b>
                       <span className="text-xs ml-1.5" style={{ color: "#7a6f52" }}>· {(s.rows || []).length}회</span>
                     </div>
-                    <button onClick={e => { e.stopPropagation(); remove(s); }} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }} title="삭제"><Trash2 size={14} color="var(--coral)" /></button>
+                    <div className="flex gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                      {s.ownerType === "student" && <button onClick={() => setCopyFrom(copyFrom === s.id ? null : s.id)} className="px-2 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1" style={{ background: copyFrom === s.id ? "#fde3c8" : "#efe3c8", color: "#5c543e" }} title="다른 학생에게 복사"><Users size={12} />학생 복사</button>}
+                      <button onClick={() => remove(s)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }} title="삭제"><Trash2 size={14} color="var(--coral)" /></button>
+                    </div>
                   </div>
+                  {copyFrom === s.id && (
+                    <div className="px-3 pt-3" style={{ background: "#fffaf0", borderTop: "1px solid #e4d8ba" }}>
+                      <CopySyllabusToStudents syllabus={s} data={data} students={scopedStudents} onCopy={(ids, rd) => copyToStudents(s, ids, rd)} onClose={() => setCopyFrom(null)} />
+                    </div>
+                  )}
                   {isOpen && (
                     <div className="p-3" style={{ background: "#fffaf0", borderTop: "1px solid #e4d8ba" }}>
                       <SyllabusEditor key={s.id} data={data} syllabus={s} onSave={rows => saveRows(s.id, rows)} onDirtyChange={setDirty} />
