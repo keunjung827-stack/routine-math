@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-10-01-186";
+const APP_VERSION = "2026-10-01-189";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -536,6 +536,7 @@ function useAppData() {
   const loadedOkRef = useRef(false);   // 서버에서 데이터를 제대로 받아온 적이 있는지 (없으면 저장 금지)
   const serverStampRef = useRef(null); // 마지막으로 받거나 저장한 서버 수정 시각
   const baseRef = useRef(null);        // 마지막으로 받거나 저장한 서버 데이터 (병합 기준)
+  const [lastSyncAt, setLastSyncAt] = useState(null); // 서버와 마지막으로 맞춘 시각 (화면 오른쪽 아래 표시)
   useEffect(() => { dataRef.current = data; }, [data]);
   useEffect(() => { savingRef.current = saving; }, [saving]);
 
@@ -555,6 +556,7 @@ function useAppData() {
     }
     loadedOkRef.current = true;
     setLoadError(false);
+    setLastSyncAt(Date.now());
   };
 
   // 가벼운 변경 확인: 서버 수정 시각이 바뀐 경우에만 전체 데이터를 다시 받음
@@ -563,6 +565,7 @@ function useAppData() {
       if (!loadedOkRef.current) { await loadFull(); return; }
       const stamp = await mainStore.getUpdatedAt();
       if (stamp === null || !sameStamp(stamp, serverStampRef.current)) await loadFull();
+      else setLastSyncAt(Date.now());
     } catch (e) { console.error("최신 데이터 확인 실패", e); }
   };
 
@@ -607,6 +610,7 @@ function useAppData() {
     try {
       serverStampRef.current = await mainStore.save(json);
       baseRef.current = toSave;
+      setLastSyncAt(Date.now());
     } catch (e) {
       console.error("저장 실패, 재시도 중", e);
       try { serverStampRef.current = await mainStore.save(json); baseRef.current = toSave; }
@@ -650,7 +654,7 @@ function useAppData() {
     setSaving(false);
   };
 
-  return { data, setData, patchData, loading, loadError, retryLoad: initialLoad, saving, saveError };
+  return { data, setData, patchData, loading, loadError, retryLoad: initialLoad, saving, saveError, lastSyncAt, refreshNow: fetchLatest };
 }
 
 
@@ -2081,7 +2085,7 @@ function progressChartsForStudent(data, student) {
   if (!student) return [];
   return sortProgressCharts((data.progressCharts || []).filter(c =>
     (c.ownerType === "student" && c.studentId === student.id) ||
-    (c.ownerType === "class" && c.classGroup && c.classGroup === student.classGroup)
+    (c.ownerType === "class" && c.classGroup && c.classGroup === student.classGroup && !(c.excludedStudentIds || []).includes(student.id))
   ));
 }
 
@@ -2183,6 +2187,80 @@ function ProgressChartGrid({ chart, month, editable, onChange, ownerLabel }) {
   );
 }
 
+function CopyChartToStudents({ chart, data, students, onCopy, onClose }) {
+  const [picked, setPicked] = useState([]);
+  const [withMarks, setWithMarks] = useState(false);
+  const [q, setQ] = useState("");
+  const already = (sid) => (data.progressCharts || []).some(c => c.ownerType === "student" && c.studentId === sid && c.title === chart.title && (c.textbook || "") === (chart.textbook || ""));
+  const list = students.filter(s => s.id !== chart.studentId && (!q.trim() || s.name.includes(q.trim()) || (s.classGroup || "").includes(q.trim())));
+  const toggle = (id) => setPicked(picked.includes(id) ? picked.filter(x => x !== id) : [...picked, id]);
+  return (
+    <div className="rounded-xl p-3 mb-3 flex flex-col gap-2" style={{ background: "#fff6e8", border: "1.5px solid var(--gold)" }}>
+      <div className="flex items-center justify-between">
+        <b className="text-sm" style={{ color: "#2b2417" }}>"{chart.title}{chart.textbook ? ` · ${chart.textbook}` : ""}" 진도표를 다른 학생에게 복사</b>
+        <button onClick={onClose}><X size={15} color="#8a7f5e" /></button>
+      </div>
+      <p className="text-[11px]" style={{ color: "#6b6250" }}>단원·칸 구성이 그대로 복사돼서 학생마다 개별 진도표가 생겨요. 칸 칠하기는 학생별로 따로 해요.</p>
+      <input className={inputCls} style={{ ...inputStyle, padding: "6px" }} value={q} onChange={e => setQ(e.target.value)} placeholder="이름이나 반으로 찾기" />
+      <div className="flex flex-col gap-1 max-h-56 overflow-y-auto">
+        {list.length === 0 ? <span className="text-xs" style={{ color: "#8a7f5e" }}>해당하는 학생이 없어요.</span> : list.map(s => {
+          const dup = already(s.id);
+          return (
+            <label key={s.id} className="flex items-center gap-2 text-sm px-2 py-1 rounded-md" style={{ background: picked.includes(s.id) ? "#fde3c8" : "transparent", color: dup ? "#a89d84" : "#2b2417", cursor: dup ? "default" : "pointer" }}>
+              <input type="checkbox" disabled={dup} checked={picked.includes(s.id)} onChange={() => toggle(s.id)} />
+              {s.name} <span className="text-xs" style={{ color: "#8a7f5e" }}>{s.grade}{s.classGroup ? ` · ${s.classGroup}` : ""}</span>
+              {dup && <span className="text-[10px]">· 이미 있음</span>}
+            </label>
+          );
+        })}
+      </div>
+      <label className="flex items-center gap-2 text-xs" style={{ color: "#4a4332" }}>
+        <input type="checkbox" checked={withMarks} onChange={e => setWithMarks(e.target.checked)} />
+        지금까지 칠한 진도도 같이 복사 (지금까지 진도가 같은 학생만)
+      </label>
+      <button disabled={picked.length === 0} onClick={() => onCopy(picked, withMarks)} className="self-start px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1" style={{ ...btnGold, opacity: picked.length ? 1 : 0.5 }}><Copy size={15} />{picked.length}명에게 복사</button>
+    </div>
+  );
+}
+
+// 반 진도표에서 일부 학생만 떼어내서 개별 진도표로 분리
+function SplitFromClassChart({ chart, data, onSplit, onRestore, onClose }) {
+  const excluded = chart.excludedStudentIds || [];
+  const members = data.students.filter(s => s.classGroup === chart.classGroup);
+  const [picked, setPicked] = useState([]);
+  const toggle = (id) => setPicked(picked.includes(id) ? picked.filter(x => x !== id) : [...picked, id]);
+  const name = (id) => data.students.find(s => s.id === id)?.name || "(삭제된 학생)";
+  return (
+    <div className="rounded-xl p-3 mb-3 flex flex-col gap-2" style={{ background: "#fff6e8", border: "1.5px solid var(--gold)" }}>
+      <div className="flex items-center justify-between">
+        <b className="text-sm" style={{ color: "#2b2417" }}>{chart.classGroup} 반 진도표에서 학생 떼어내기</b>
+        <button onClick={onClose}><X size={15} color="#8a7f5e" /></button>
+      </div>
+      <p className="text-[11px]" style={{ color: "#6b6250" }}>고른 학생은 지금까지 칠한 진도를 그대로 가진 개별 진도표로 옮겨지고, 이 반 진도표에서는 빠져요. 그 학생 리포트에는 개별 진도표만 나와요.</p>
+      <div className="flex flex-col gap-1 max-h-56 overflow-y-auto">
+        {members.filter(s => !excluded.includes(s.id)).length === 0 ? <span className="text-xs" style={{ color: "#8a7f5e" }}>떼어낼 학생이 없어요.</span> :
+          members.filter(s => !excluded.includes(s.id)).map(s => (
+            <label key={s.id} className="flex items-center gap-2 text-sm px-2 py-1 rounded-md" style={{ background: picked.includes(s.id) ? "#fde3c8" : "transparent", color: "#2b2417", cursor: "pointer" }}>
+              <input type="checkbox" checked={picked.includes(s.id)} onChange={() => toggle(s.id)} />{s.name}
+            </label>
+          ))}
+      </div>
+      <button disabled={picked.length === 0} onClick={() => { onSplit(picked); setPicked([]); }} className="self-start px-4 py-2 rounded-lg text-sm font-semibold" style={{ ...btnGold, opacity: picked.length ? 1 : 0.5 }}>{picked.length}명 따로 떼어내기</button>
+      {excluded.length > 0 && (
+        <div className="flex flex-col gap-1 pt-2" style={{ borderTop: "1px dashed #e4d8ba" }}>
+          <span className="text-[11px] font-semibold" style={{ color: "#5c543e" }}>따로 관리 중인 학생</span>
+          {excluded.map(id => (
+            <div key={id} className="flex items-center justify-between text-xs px-2 py-1 rounded-md" style={{ background: "#f4efe1" }}>
+              <span>{name(id)} <span style={{ color: "#8a7f5e" }}>· 개별 진도표로 관리 중</span></span>
+              <button onClick={() => onRestore(id)} className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ border: "1px solid #ddcda0", color: "#5c543e", background: "#fffaf0" }}>반으로 되돌리기</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProgressChartTab({ data, setData, scopeClassGroups }) {
   const charts = data.progressCharts || [];
   const scopedStudents = studentsInScope(data.students, scopeClassGroups);
@@ -2228,6 +2306,30 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
     setData({ ...data, progressCharts: [...charts, copy] });
     setSelectedId(copy.id);
   };
+  // 같은 교재를 쓰는 다른 학생들에게 진도표 구조 복사 (학생마다 개별 진도표)
+  const [copyFrom, setCopyFrom] = useState(null);
+  const copyToStudents = (c, studentIds, withMarks) => {
+    const now = new Date().toISOString();
+    const copies = studentIds.map(sid => ({ ...c, id: uid(), ownerType: "student", studentId: sid, classGroup: "", units: (c.units || []).map(u => ({ ...u })), marks: withMarks ? JSON.parse(JSON.stringify(c.marks || {})) : {}, createdAt: now }));
+    setData({ ...data, progressCharts: [...charts, ...copies] });
+    setCopyFrom(null);
+    alert(`${copies.length}명에게 개별 진도표를 만들었어요.`);
+  };
+  // 반 진도표에서 학생 떼어내기 / 되돌리기
+  const [splitFrom, setSplitFrom] = useState(null);
+  const splitStudents = (c, studentIds) => {
+    const now = new Date().toISOString();
+    const copies = studentIds.map(sid => ({ ...c, id: uid(), ownerType: "student", studentId: sid, classGroup: "", excludedStudentIds: undefined, splitFrom: c.id, units: (c.units || []).map(u => ({ ...u })), marks: JSON.parse(JSON.stringify(c.marks || {})), createdAt: now }));
+    const updated = { ...c, excludedStudentIds: [...new Set([...(c.excludedStudentIds || []), ...studentIds])] };
+    setData({ ...data, progressCharts: [...charts.map(x => x.id === c.id ? updated : x), ...copies] });
+    alert(`${copies.length}명을 개별 진도표로 옮겼어요. 지금까지의 진도는 그대로 복사됐어요.`);
+  };
+  const restoreStudent = (c, sid) => {
+    const split = charts.find(x => x.ownerType === "student" && x.studentId === sid && x.splitFrom === c.id);
+    const delSplit = split ? window.confirm("다시 반 진도표로 관리할게요.\n떼어낼 때 만든 이 학생의 개별 진도표도 삭제할까요?\n(취소를 누르면 개별 진도표는 남겨둬요)") : false;
+    const updated = { ...c, excludedStudentIds: (c.excludedStudentIds || []).filter(x => x !== sid) };
+    setData({ ...data, progressCharts: charts.filter(x => !(delSplit && split && x.id === split.id)).map(x => x.id === c.id ? updated : x) });
+  };
   const removeChart = (c) => {
     if (!window.confirm(`"${c.title}" (${ownerText(c)}) 진도표를 삭제할까요?\n표시한 진도 기록도 함께 지워져요.`)) return;
     setData({ ...data, progressCharts: charts.filter(x => x.id !== c.id) });
@@ -2258,11 +2360,23 @@ function ProgressChartTab({ data, setData, scopeClassGroups }) {
                   <b>{c.title}</b> <span className="text-xs" style={{ color: "#7a6f52" }}>· {c.ownerType === "class" ? c.classGroup : studentName(c.studentId)}{c.textbook ? ` · ${c.textbook}` : ""}</span>
                 </div>
                 <div className="flex gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                  {c.ownerType === "class" && <button onClick={() => setSplitFrom(splitFrom === c.id ? null : c.id)} className="px-2 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1" style={{ background: splitFrom === c.id ? "#fde3c8" : "#efe3c8", color: "#5c543e" }} title="이 반에서 일부 학생만 따로 관리"><Users size={12} />학생 떼어내기{(c.excludedStudentIds || []).length ? ` (${c.excludedStudentIds.length})` : ""}</button>}
+                  {c.ownerType === "student" && <button onClick={() => setCopyFrom(copyFrom === c.id ? null : c.id)} className="px-2 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1" style={{ background: copyFrom === c.id ? "#fde3c8" : "#efe3c8", color: "#5c543e" }} title="다른 학생에게 복사"><Users size={12} />학생 복사</button>}
                   <button onClick={() => addTextbook(c)} className="px-2 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1" style={{ background: "#efe3c8", color: "#5c543e" }} title="같은 과정에 교재 추가"><Copy size={12} />교재 추가</button>
                   <button onClick={() => setForm(toForm(c))} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }} title="구조 수정"><Pencil size={14} color="#5c543e" /></button>
                   <button onClick={() => removeChart(c)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }} title="삭제"><Trash2 size={14} color="var(--coral)" /></button>
                 </div>
               </div>
+              {splitFrom === c.id && (
+                <div className="px-3 pt-3" style={{ background: "#fffaf0", borderTop: "1px solid #e4d8ba" }}>
+                  <SplitFromClassChart chart={c} data={data} onSplit={ids => splitStudents(c, ids)} onRestore={sid => restoreStudent(c, sid)} onClose={() => setSplitFrom(null)} />
+                </div>
+              )}
+              {copyFrom === c.id && (
+                <div className="px-3 pt-3" style={{ background: "#fffaf0", borderTop: "1px solid #e4d8ba" }}>
+                  <CopyChartToStudents chart={c} data={data} students={scopedStudents} onCopy={(ids, wm) => copyToStudents(c, ids, wm)} onClose={() => setCopyFrom(null)} />
+                </div>
+              )}
               {c.id === selected?.id && !form && (
                 <div className="p-3" style={{ background: "#fffaf0", borderTop: "1px solid #e4d8ba" }}>
                   <ProgressChartGrid chart={c} month={month} editable onChange={saveChart} ownerLabel={ownerText(c)} />
@@ -6312,7 +6426,7 @@ function RoleGate({ onTeacher, onStudent, onAdmin }) {
 }
 
 function App() {
-  const { data, setData, patchData, loading, loadError, retryLoad, saving, saveError } = useAppData();
+  const { data, setData, patchData, loading, loadError, retryLoad, saving, saveError, lastSyncAt, refreshNow } = useAppData();
   const [view, setView] = useState("gate");
   const [studentId, setStudentId] = useState(null);
   const [teacherId, setTeacherId] = useState(null);
@@ -6464,7 +6578,9 @@ function App() {
   return (
     <div style={{ "--gold": "#e2822f", "--coral": "#c65a1f" }}>
       {/* 현재 앱 버전 표시 (폰에서 새 버전이 적용됐는지 확인용) */}
-      <div className="print-hide" style={{ position: "fixed", right: 8, bottom: "calc(6px + env(safe-area-inset-bottom, 0px))", fontSize: 10, color: "#a89d84", opacity: 0.8, pointerEvents: "none", zIndex: 5 }}>v{APP_VERSION}</div>
+      <button onClick={() => refreshNow && refreshNow()} title="누르면 서버에서 최신 내용을 바로 받아와요" className="print-hide" style={{ position: "fixed", right: 8, bottom: "calc(6px + env(safe-area-inset-bottom, 0px))", fontSize: 10, color: "#a89d84", opacity: 0.85, zIndex: 5, background: "transparent" }}>
+        v{APP_VERSION}{lastSyncAt ? ` · 동기화 ${new Date(lastSyncAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })} ↻` : ""}
+      </button>
       <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; } @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 16px; } #print-area input, #print-area textarea { border: none !important; background: transparent !important; padding: 0 !important; resize: none; } .print-hide { display: none !important; } #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } #print-area .avoid-break, #print-area .rounded-2xl, #print-area .rounded-lg, #print-area .rounded-xl, #print-area tr, #print-area svg, #print-area table { break-inside: avoid; page-break-inside: avoid; } #print-area h3, #print-area h4 { break-after: avoid; page-break-after: avoid; } #print-area { display: table !important; } #print-area > * { margin-bottom: 16px; } #print-area .print-footer-space { display: table-footer-group !important; } #print-area .print-footer-space > div { height: 14mm; } #print-area .print-header-space { display: table-header-group !important; } #print-area .print-header-space > div { height: 14mm; } #print-area .print-footer { display: flex !important; position: fixed; left: 16px; right: 16px; bottom: 0; } } .print-only { display: none; }`}</style>
 
       {view === "gate" && <RoleGate onStudent={() => setView("studentLogin")} onTeacher={() => setView("teacherLogin")} onAdmin={() => setView("adminGate")} />}
