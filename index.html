@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-10-01-193";
+const APP_VERSION = "2026-10-02-194";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -2483,12 +2483,19 @@ async function exportElementToPdf(el, fileName) {
           d.style.cssText = "white-space:pre-line;font-size:14px;line-height:1.6;color:#2b2417;";
           inp.replaceWith(d);
         });
-        // 페이지를 나눌 때 자르면 안 되는 덩어리들의 위치 (한 페이지보다 큰 건 제외)
+        // 페이지를 나눌 때 자르면 안 되는 덩어리들의 위치
+        // 반 페이지보다 큰 덩어리(큰 섹션)는 통째로 넘기지 않음 → 앞 페이지가 텅 비는 것 방지. 대신 그 안의 표 줄·카드·그래프 단위로 끊음
         const top0 = root.getBoundingClientRect().top;
         totalH = root.scrollHeight;
         intervals = [...root.querySelectorAll(".avoid-break, .rounded-2xl, .rounded-xl, .rounded-lg, tr, svg, table, h3")]
-          .map(n => { const r = n.getBoundingClientRect(); return [r.top - top0, r.bottom - top0]; })
-          .filter(([a, b]) => b - a > 1 && b - a < pageHpx * 0.95);
+          .map(n => {
+            const r = n.getBoundingClientRect();
+            let bottom = r.bottom;
+            // 제목은 바로 다음 내용 첫 부분과 같이 다니게 (제목만 페이지 끝에 남지 않게)
+            if (n.tagName === "H3" && n.nextElementSibling) { const nr = n.nextElementSibling.getBoundingClientRect(); bottom = Math.min(nr.bottom, nr.top + 90); }
+            return [r.top - top0, bottom - top0];
+          })
+          .filter(([a, b]) => b - a > 1 && b - a < pageHpx * 0.45);
       },
     });
 
@@ -6670,7 +6677,7 @@ function App() {
       <button onClick={() => refreshNow && refreshNow()} title="누르면 서버에서 최신 내용을 바로 받아와요" className="print-hide" style={{ position: "fixed", right: 8, bottom: "calc(6px + env(safe-area-inset-bottom, 0px))", fontSize: 10, color: "#a89d84", opacity: 0.85, zIndex: 5, background: "transparent" }}>
         v{APP_VERSION}{lastSyncAt ? ` · 동기화 ${new Date(lastSyncAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })} ↻` : ""}
       </button>
-      <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; } @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 16px; } #print-area input, #print-area textarea { border: none !important; background: transparent !important; padding: 0 !important; resize: none; } .print-hide { display: none !important; } #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } #print-area .avoid-break, #print-area .rounded-2xl, #print-area .rounded-lg, #print-area .rounded-xl, #print-area tr, #print-area svg, #print-area table { break-inside: avoid; page-break-inside: avoid; } #print-area h3, #print-area h4 { break-after: avoid; page-break-after: avoid; } #print-area { display: table !important; } #print-area > * { margin-bottom: 16px; } #print-area .print-footer-space { display: table-footer-group !important; } #print-area .print-footer-space > div { height: 14mm; } #print-area .print-header-space { display: table-header-group !important; } #print-area .print-header-space > div { height: 14mm; } #print-area .print-footer { display: flex !important; position: fixed; left: 16px; right: 16px; bottom: 0; } } .print-only { display: none; }`}</style>
+      <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; } @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 16px; } #print-area input, #print-area textarea { border: none !important; background: transparent !important; padding: 0 !important; resize: none; } .print-hide { display: none !important; } #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } #print-area .avoid-break, #print-area .rounded-lg, #print-area .rounded-xl, #print-area tr, #print-area svg, #print-area table { break-inside: avoid; page-break-inside: avoid; } #print-area h3, #print-area h4 { break-after: avoid; page-break-after: avoid; } #print-area { display: table !important; } #print-area > * { margin-bottom: 16px; } #print-area .print-footer-space { display: table-footer-group !important; } #print-area .print-footer-space > div { height: 14mm; } #print-area .print-header-space { display: table-header-group !important; } #print-area .print-header-space > div { height: 14mm; } #print-area .print-footer { display: flex !important; position: fixed; left: 16px; right: 16px; bottom: 0; } } .print-only { display: none; }`}</style>
 
       {view === "gate" && <RoleGate onStudent={() => setView("studentLogin")} onTeacher={() => setView("teacherLogin")} onAdmin={() => setView("adminGate")} />}
 
