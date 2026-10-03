@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-10-03-202";
+const APP_VERSION = "2026-10-03-203";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -2898,8 +2898,9 @@ const EFF_KINDS = ["개념", "문제풀이", "오답정리"];
 const EFF_TYPES = [
   { id: "A", name: "속도형", desc: "빠른데 실수가 많음 → 정확도 관리" },
   { id: "B", name: "정체형", desc: "정확도는 괜찮은데 오래 걸림 → 풀이속도 관리" },
-  { id: "C", name: "개념형", desc: "특정 개념에서 반복해서 막힘 → 개념 보충" },
+  { id: "C", name: "개념형", desc: "개념·공식 자체가 안 떠올라 막힘 → 개념 보충" },
   { id: "D", name: "학습습관형", desc: "공부시간이 불규칙·집중력 부족 → 학습 루틴 관리" },
+  { id: "E", name: "적용형", desc: "개념은 아는데 문제에 연결을 못 함 → 유형별 풀이 전략·조건→개념 연결 연습" },
 ];
 const EFF_KIND_COLORS = { "개념": "#3b6fb6", "문제풀이": "#3d9a50", "오답정리": "#e2822f" };
 
@@ -2958,8 +2959,8 @@ const monthEndStr = (month) => { const [y, m] = month.split("-").map(Number); re
 function effTypeHint(st, hs) {
   // 힌트 결과: 개념·공식을 다시 알려줘야 했던 문제가 많으면 개념형
   if (hs && hs.concept >= 3 && hs.concept >= hs.solved) return "C";
-  // 힌트만 주면 대부분 풀리는데 풀이가 느리면 정체형 (실마리를 스스로 찾는 데 시간이 걸림)
-  if (hs && hs.solved >= 3 && hs.solved > hs.explain * 2 && st && st.secPerProblem != null && st.secPerProblem >= 240) return "B";
+  // 힌트 후 해결·힌트 후에도 못 품이 대부분이면 적용형 (개념은 아는데 문제와 연결을 못 함)
+  if (hs && (hs.solved + hs.explain) >= 3 && (hs.solved + hs.explain) > hs.concept * 2) return "E";
   if (!st || st.gradedProblems < 10) return "";
   if (st.accuracy != null && st.accuracy < 75 && st.secPerProblem != null && st.secPerProblem < 180) return "A";
   if (st.accuracy != null && st.accuracy >= 80 && st.secPerProblem != null && st.secPerProblem >= 300) return "B";
@@ -3050,6 +3051,11 @@ const PRESC_LIBRARY = [
     "오답은 풀이만 베끼지 말고 막힌 지점을 적어두기",
     "힌트로도 못 푼 문제는 풀이를 듣고 같은 유형 2문제를 더 풀어 접근법 익히기",
   ] },
+  { group: "개념 적용 (적용형)", type: "E", items: [
+    "문제를 읽고 풀기 전에 조건 옆에 쓸 개념 이름을 먼저 적기",
+    "같은 유형 3문제를 연달아 풀고 풀이 첫 줄을 비교하기",
+    "막힌 문제는 '구하는 것 → 필요한 조건 → 쓸 개념' 순서로 한 줄씩 적어보기",
+  ] },
 ];
 
 // 이번 수업 기록을 보고 가장 필요한 처방을 골라줌 (근거 문장과 함께)
@@ -3058,6 +3064,7 @@ function suggestPrescriptions(st, goal, profileType, hs) {
   const add = (text, why) => { if (!out.find(o => o.text === text)) out.push({ text, why }); };
   // 이번 수업 힌트 결과가 있으면 그 원인에 맞는 처방을 가장 먼저
   if (hs && hs.concept > 0) add(PRESC_LIBRARY[2].items[1], `개념·공식 부족 ${hs.concept}문제`);
+  if (hs && hs.solved > 0) add(PRESC_LIBRARY[5].items[0], `힌트(실마리)를 주니 풀린 문제 ${hs.solved}개 → 개념 연결 연습`);
   if (hs && hs.explain > 0) add(PRESC_LIBRARY[4].items[3], `힌트 후에도 못 푼 문제 ${hs.explain}개`);
   if (hs && hs.self > 0) add(PRESC_LIBRARY[4].items[1], `넘겼던 문제 중 ${hs.self}개를 혼자 다시 풀어냄`);
   const wrong = st.gradedProblems - st.correct;
