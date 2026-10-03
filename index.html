@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-10-03-197";
+const APP_VERSION = "2026-10-03-198";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -2468,7 +2468,7 @@ async function exportElementToPdf(el, fileName) {
     const pageHpx = CONTENT_H_MM * (CAPTURE_W / CONTENT_W_MM); // 한 페이지에 들어가는 높이(화면 px)
     const estH = el.scrollHeight;
     const scale = Math.min(2, Math.sqrt(14000000 / (CAPTURE_W * Math.max(estH, 1)))); // 폰 브라우저 캔버스 한도 고려
-    let intervals = [], totalH = estH;
+    let intervals = [], totalH = estH, boxes = [];
 
     const canvas = await window.html2canvas(el, {
       scale, backgroundColor: "#f6f1e4", useCORS: true, logging: false,
@@ -2497,6 +2497,8 @@ async function exportElementToPdf(el, fileName) {
             return [r.top - top0, bottom - top0, n.classList && n.classList.contains("keep-together")];
           })
           .filter(([a, b, keep]) => b - a > 1 && b - a < pageHpx * (keep ? 0.95 : 0.45));
+        // 섹션 박스 위치 (박스 테두리만 앞 페이지에 조금 남는 것 방지용)
+        boxes = [...root.querySelectorAll(".rounded-2xl")].map(n => { const r = n.getBoundingClientRect(); return [r.top - top0, r.bottom - top0]; });
       },
     });
 
@@ -2515,6 +2517,15 @@ async function exportElementToPdf(el, fileName) {
           .sort((p, q) => q - p);
         if (cand.length) y = Math.ceil(cand[0]);
       }
+      // 자르는 위치가 섹션 박스의 윗부분(제목 전 여백)이면 박스 시작 전에서, 아랫부분(마지막 여백)이면 박스 끝에서 자름
+      // → 박스 테두리만 페이지 끝에 조금 걸치거나, 다음 페이지 맨 위에 빈 박스 끝만 남는 것 방지
+      const EDGE = 56;
+      boxes.forEach(([a, b]) => {
+        if (y > a && y < b) {
+          if (y - a < EDGE && a > start + pageHpx * 0.3) y = a;
+          else if (b - y < EDGE && b <= start + pageHpx) y = b;
+        }
+      });
       cuts.push([start, y]);
       start = y;
     }
