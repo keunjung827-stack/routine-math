@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-10-03-203";
+const APP_VERSION = "2026-10-03-204";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -3260,6 +3260,10 @@ function HintPanel({ data, setData, students }) {
   const logs = (data.effLogs || []).filter(l => ids.has(l.studentId) && l.date >= from).sort((a, b) => b.date.localeCompare(a.date));
   const groups = logs.map(l => ({ log: l, items: effHintItems(l) })).filter(g => g.items.length && (showDone || g.items.some(it => !it.result)));
   const pendingTotal = logs.reduce((n, l) => n + effHintItems(l).filter(it => !it.result).length, 0);
+  // 학생별로 묶어서 접고 펼치기 (처음에는 모두 접힘)
+  const [openStudents, setOpenStudents] = useState({});
+  const byStudent = [];
+  groups.forEach(g => { let b = byStudent.find(x => x.studentId === g.log.studentId); if (!b) { b = { studentId: g.log.studentId, list: [] }; byStudent.push(b); } b.list.push(g); });
   const name = (id) => data.students.find(s => s.id === id)?.name || "-";
   const setResult = (log, items, result) => {
     const cur = { ...(log.hintResults || {}) };
@@ -3281,25 +3285,46 @@ function HintPanel({ data, setData, students }) {
       <p className="text-[11px]" style={{ color: "#8a7f5e" }}>학습 효율 기록에서 ✕(못 풀고 넘어간 문제)를 자동으로 모았어요. 하나를 눌러주세요. <b style={{ color: "#173226" }}>혼자 다시 해결</b> = 힌트 없이 다시 풀어냄 · <b style={{ color: "#3d9a50" }}>힌트 후 해결</b> = 접근 실마리만 주니 풀었음 · <b style={{ color: "#3b6fb6" }}>개념·공식 부족</b> = 개념이나 공식을 다시 알려줘야 했음 · <b style={{ color: "#c65a1f" }}>힌트 후에도 못 품</b> = 알려줘도 접근 자체를 못 함.</p>
       {groups.length === 0 ? <EmptyState text={pendingTotal === 0 ? "힌트 줄 문제가 없어요." : "표시할 문제가 없어요."} /> : (
         <div className="flex flex-col gap-2">
-          {groups.map(({ log, items }) => {
-            const pendingItems = items.filter(it => !it.result);
+          {byStudent.map(({ studentId, list }) => {
+            const all = list.flatMap(g => g.items);
+            const left = all.filter(it => !it.result).length;
+            const isOpen = !!openStudents[studentId];
             return (
-              <div key={log.id} className="rounded-lg p-2.5 flex flex-col gap-1.5" style={{ background: "#f4efe1" }}>
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="text-sm"><b>{name(log.studentId)}</b> <span className="text-xs" style={{ color: "#7a6f52" }}>· {shortMD(log.date)}</span></span>
-                  {pendingItems.length > 1 && <button onClick={() => setResult(log, pendingItems, "solved")} className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={btn(false, "#3d9a50")}>남은 {pendingItems.length}문제 전부 힌트 후 해결</button>}
-                </div>
-                {items.map(it => (
-                  <div key={it.key} className="flex items-center justify-between gap-2 flex-wrap text-xs">
-                    <span style={{ color: "#2b2417" }}><b>{it.no}번</b>{it.minutes ? ` (${it.minutes}분)` : ""}{it.material ? <span style={{ color: "#8a7f5e" }}> · {it.material}</span> : null}</span>
-                    <div className="flex gap-1 flex-wrap">
-                      <button onClick={() => setResult(log, [it], it.result === "self" ? "" : "self")} className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={btn(it.result === "self", "#173226")}>혼자 다시 해결</button>
-                      <button onClick={() => setResult(log, [it], it.result === "solved" ? "" : "solved")} className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={btn(it.result === "solved", "#3d9a50")}>힌트 후 해결</button>
-                      <button onClick={() => setResult(log, [it], it.result === "concept" ? "" : "concept")} className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={btn(it.result === "concept", "#3b6fb6")}>개념·공식 부족</button>
-                      <button onClick={() => setResult(log, [it], it.result === "explain" ? "" : "explain")} className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={btn(it.result === "explain", "#c65a1f")}>힌트 후에도 못 품</button>
-                    </div>
+              <div key={studentId} className="rounded-lg overflow-hidden" style={{ background: "#f4efe1", border: isOpen ? "1.5px solid var(--gold)" : "1.5px solid transparent" }}>
+                <button onClick={() => setOpenStudents({ ...openStudents, [studentId]: !isOpen })} className="w-full flex items-center justify-between gap-2 px-2.5 py-2 text-left">
+                  <span className="flex items-center gap-1 text-sm">
+                    <ChevronLeft size={15} color="#8a7f5e" style={{ transform: isOpen ? "rotate(-90deg)" : "rotate(180deg)", transition: "transform .15s" }} />
+                    <b>{name(studentId)}</b>
+                    <span className="text-xs" style={{ color: "#7a6f52" }}>· {list.length === 1 ? shortMD(list[0].log.date) : `${list.length}번 수업`}</span>
+                  </span>
+                  <span className="text-[11px] font-semibold" style={{ color: left ? "var(--coral)" : "#3d9a50" }}>{left ? `남은 ${left} / ${all.length}문제` : `✓ ${all.length}문제 완료`}</span>
+                </button>
+                {isOpen && (
+                  <div className="px-2.5 pb-2.5 flex flex-col gap-2">
+                    {list.map(({ log, items }) => {
+                      const pendingItems = items.filter(it => !it.result);
+                      return (
+                        <div key={log.id} className="flex flex-col gap-1.5 pt-2" style={{ borderTop: "1px dashed #e4d8ba" }}>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="text-xs font-semibold" style={{ color: "#5c543e" }}>{shortMD(log.date)} 수업</span>
+                            {pendingItems.length > 1 && <button onClick={() => setResult(log, pendingItems, "solved")} className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={btn(false, "#3d9a50")}>남은 {pendingItems.length}문제 전부 힌트 후 해결</button>}
+                          </div>
+                          {items.map(it => (
+                            <div key={it.key} className="flex items-center justify-between gap-2 flex-wrap text-xs">
+                              <span style={{ color: "#2b2417" }}><b>{it.no}번</b>{it.minutes ? ` (${it.minutes}분)` : ""}{it.material ? <span style={{ color: "#8a7f5e" }}> · {it.material}</span> : null}</span>
+                              <div className="flex gap-1 flex-wrap">
+                                <button onClick={() => setResult(log, [it], it.result === "self" ? "" : "self")} className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={btn(it.result === "self", "#173226")}>혼자 다시 해결</button>
+                                <button onClick={() => setResult(log, [it], it.result === "solved" ? "" : "solved")} className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={btn(it.result === "solved", "#3d9a50")}>힌트 후 해결</button>
+                                <button onClick={() => setResult(log, [it], it.result === "concept" ? "" : "concept")} className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={btn(it.result === "concept", "#3b6fb6")}>개념·공식 부족</button>
+                                <button onClick={() => setResult(log, [it], it.result === "explain" ? "" : "explain")} className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={btn(it.result === "explain", "#c65a1f")}>힌트 후에도 못 품</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
+                )}
               </div>
             );
           })}
