@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-10-03-204";
+const APP_VERSION = "2026-10-04-207";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -1797,7 +1797,7 @@ function buildDailyReportText(student, date, items, testName, testScore, comment
       lines.push(`${it.label} · ${statusText}`);
     } else if (it.kind === "choice") {
       const opt = (it.options || []).find(o => o.value === it.result);
-      lines.push(`${it.label} · ${opt ? `${opt.value} (${opt.label})` : "-"}${it.note ? (it.note.includes("\n") ? `\n${it.note}` : ` — ${it.note}`) : ""}`);
+      lines.push(`${it.label} · ${opt ? opt.label : "-"}${it.note ? (it.note.includes("\n") ? `\n${it.note}` : ` — ${it.note}`) : ""}`);
     }
   });
   if (testName) {
@@ -1808,7 +1808,7 @@ function buildDailyReportText(student, date, items, testName, testScore, comment
   }
   if (comment) {
     lines.push("");
-    lines.push("선생님 코멘트");
+    lines.push("코멘트");
     lines.push(comment);
   }
   return lines.join("\n");
@@ -2912,8 +2912,10 @@ function parseStuck(text) {
   const t = (text || "").trim();
   if (!t) return { count: 0, minutes: 0, gaveUp: 0 };
   let count = 0, minutes = 0, gaveUp = 0;
-  const rest = t.replace(/(\d+)\s*[(（]\s*(\d*)\s*(?:분)?\s*([xX✕✗×])?\s*[)）]/g, (m, no, min, x) => {
-    count += 1; minutes += Number(min) || 0; if (x) gaveUp += 1; return " ";
+  // x는 괄호 안(25(3x))이나 바로 뒤(25(3)x) 어디에 써도 인식
+  const rest = t.replace(/(\d+)\s*([xX✕✗×])?\s*[(（]\s*(\d*)\s*(?:분)?\s*([xX✕✗×])?\s*[)）]\s*([xX✕✗×])?/g, (m, no, x0, min, x, x2) => {
+    if (x0) x = x0;
+    count += 1; minutes += Number(min) || 0; if (x || x2) gaveUp += 1; return " ";
   });
   rest.split(/[,，/]+|\s{2,}|\n/).map(x => x.trim()).filter(p => /\d|[✕✗×]/.test(p)).forEach(p => {
     count += 1;
@@ -3219,7 +3221,7 @@ function parseStuckItems(text) {
   const t = (text || "").trim();
   if (!t) return [];
   const items = [];
-  const rest = t.replace(/(\d+)\s*[(（]\s*(\d*)\s*(?:분)?\s*([xX✕✗×])?\s*[)）]/g, (m, no, min, x) => { items.push({ no, minutes: Number(min) || 0, gaveUp: !!x }); return " "; });
+  const rest = t.replace(/(\d+)\s*([xX✕✗×])?\s*[(（]\s*(\d*)\s*(?:분)?\s*([xX✕✗×])?\s*[)）]\s*([xX✕✗×])?/g, (m, no, x0, min, x, x2) => { items.push({ no, minutes: Number(min) || 0, gaveUp: !!(x0 || x || x2) }); return " "; });
   rest.split(/[,，/]+|\s{2,}|\n/).map(x => x.trim()).filter(p => /\d|[✕✗×]/.test(p)).forEach(p => {
     const no = (p.match(/(\d+)\s*번/) || p.match(/^(\d+)/) || [])[1] || "?";
     const m = p.match(/(\d+)\s*분/);
@@ -3513,7 +3515,7 @@ function EffReportSection({ data, studentId, month }) {
       </div>
       <div style={{ overflowX: "auto" }} className="mb-3">
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr>{["주", "학습시간", "문제", "정답률", "문제당", "★막힘", "선생님 처방"].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{["주", "학습시간", "문제", "정답률", "문제당", "★막힘", "처방"].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
           <tbody>
             {weeks.map(w => (
               <tr key={w.key}>
@@ -3568,7 +3570,7 @@ function effAlertBlock(log) {
   }
   if (st.problems > 0) lines.push(`${st.problems}문제${st.accuracy == null ? "" : ` · 정답률 ${st.accuracy}%`}${st.secPerProblem == null ? "" : ` · 문제당 ${fmtSec(st.secPerProblem)}`}`);
   if (st.stuckCount > 0) lines.push(`★ 막힌 문제 ${st.stuckCount}개${st.stuckMinutes ? ` (총 ${st.stuckMinutes}분)` : ""}${st.gaveUp ? ` · 못 푼 문제 ${st.gaveUp}개` : ""}`);
-  if (presc) lines.push(`선생님 처방: ${presc}`);
+  if (presc) lines.push(`처방: ${presc}`);
   return `${EFF_ALERT_MARK}\n${lines.join("\n")}`;
 }
 const stripEffBlock = (msg) => (msg || "").split(EFF_ALERT_MARK)[0];
@@ -4301,6 +4303,121 @@ function StudentMessagesTab({ data, setData, studentId }) {
   );
 }
 
+// ===== 학부모 알림: 보기 좋은 글 + 이미지 카드 =====
+const MSG_SECTION_ICONS = [
+  [/^오늘 할 일/, "✅"], [/^오늘의 평가/, "📝"], [/^(선생님 )?코멘트$/, "💬"], [/^📘/, ""], [/^출결/, "🕘"],
+];
+// 예전에 만든 알림도 같은 모양으로: "선생님" 빼기, "N (새로 배움)" 같은 기호 빼고 뜻만
+function cleanAlertLine(l) {
+  return l
+    .replace(/^선생님 코멘트$/, "코멘트")
+    .replace(/^선생님 처방:/, "처방:")
+    .replace(/ · (?:[A-Z]|완료|기한초과|미제출) \(([^)]+)\)/, " · $1");
+}
+// 알림 날짜: 루틴/학습효율 알림이면 그 수업 날짜, 아니면 만든 날짜
+function alertDate(data, a) {
+  const k = a.sourceKey || "";
+  if (k.startsWith("routine:")) { const r = (data.routines || []).find(x => x.id === k.slice(8)); if (r) return r.date; }
+  if (k.startsWith("eff:")) return k.split(":")[2] || "";
+  return (a.createdAt || "").slice(0, 10);
+}
+// 저장된 알림 글 → 구역 목록 [{ title, lines }]
+function alertSections(message) {
+  let lines = (message || "").split("\n");
+  if (/^🌱/.test(lines[0] || "")) lines = lines.slice(2); // "오늘의 ROUTINE / 이름·학년" 머리줄은 카드 제목으로 대신
+  lines = lines.map(l => cleanAlertLine(l.replace(/^\[루틴수학\]\s*/, "")));
+  const out = []; let cur = null;
+  lines.forEach(l => {
+    if (!l.trim()) { cur = null; return; }
+    const isTitle = MSG_SECTION_ICONS.some(([re]) => re.test(l)) && !/^출결/.test(l);
+    if (isTitle) { cur = { title: l.replace(/^📘\s*/, ""), lines: [] }; out.push(cur); return; }
+    if (!cur) { cur = { title: "", lines: [] }; out.push(cur); }
+    cur.lines.push(l);
+  });
+  return out.filter(s => s.title || s.lines.length);
+}
+// 카톡에 붙여넣을 보기 좋은 글
+function prettyAlertText(data, a) {
+  const st = data.students.find(s => s.id === a.studentId);
+  const d = alertDate(data, a);
+  const head = `안녕하세요, 루틴수학학원입니다 😊\n🗓 ${d ? shortMD(d) + " " : ""}${st?.name || ""} 학생 수업 소식`;
+  const body = alertSections(a.message).map(sec => {
+    const icon = (MSG_SECTION_ICONS.find(([re]) => re.test(sec.title)) || [null, ""])[1];
+    const title = sec.title ? `${icon || "📘"} ${sec.title}` : "";
+    const lines = sec.lines.map(l => l.replace(/^처방:\s*/, "💡 처방: ").replace(/^출결:/, "🕘 출결:"));
+    return [title, ...lines].filter(Boolean).join("\n");
+  }).join("\n\n");
+  return `${head}\n━━━━━━━━━━━━\n${body}\n━━━━━━━━━━━━\n수학상위권집합소 | 최고의 경쟁력은 습관이다`;
+}
+
+function AlertCard({ data, a }) {
+  const st = data.students.find(s => s.id === a.studentId);
+  const d = alertDate(data, a);
+  const secs = alertSections(a.message);
+  const font = "Pretendard, 'Noto Sans KR', sans-serif";
+  return (
+    <div style={{ width: 420, background: "#f6f1e4", fontFamily: font, color: "#2b2417", padding: 14, boxSizing: "border-box" }}>
+      <div style={{ background: "linear-gradient(180deg, #173226, #204233)", borderRadius: 16, padding: "16px 18px", color: "#f4efe1" }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "#e2822f", fontFamily: "'Noto Serif KR', serif" }}>루틴수학학원</div>
+        <div style={{ fontSize: 10, color: "#b9c9bd", marginTop: 2 }}>최고의 경쟁력은 습관이다</div>
+        <div style={{ fontSize: 19, fontWeight: 800, marginTop: 12, fontFamily: "'Noto Serif KR', serif" }}>{st?.name || ""} 학생 수업 소식</div>
+        <div style={{ fontSize: 12, color: "#d6e2d9", marginTop: 3 }}>{d ? `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일` : ""}{st?.grade ? ` · ${st.grade}` : ""}{st?.classGroup ? ` · ${st.classGroup}` : ""}</div>
+      </div>
+      {secs.map((sec, i) => {
+        const icon = (MSG_SECTION_ICONS.find(([re]) => re.test(sec.title)) || [null, ""])[1] || (sec.title ? "📘" : "");
+        return (
+          <div key={i} style={{ background: "#fffaf0", border: "1px solid #e4d8ba", borderRadius: 12, padding: "11px 14px", marginTop: 10 }}>
+            {sec.title && <div style={{ fontSize: 13, fontWeight: 800, color: "#173226", marginBottom: 6 }}>{icon} {sec.title}</div>}
+            {sec.lines.map((l, j) => {
+              const presc = /^처방:/.test(l);
+              const [k, ...rest] = l.split(" · ");
+              return (
+                <div key={j} style={{ fontSize: 12.5, lineHeight: 1.6, whiteSpace: "pre-wrap", padding: presc ? "6px 9px" : 0, marginTop: presc ? 6 : 0, borderRadius: 8, background: presc ? "#fdecd8" : "transparent", color: presc ? "#8a3a0f" : "#2b2417", fontWeight: presc ? 700 : 400 }}>
+                  {presc ? `💡 ${l}`
+                    : /^출결:/.test(l) ? <>🕘 <span style={{ color: "#5c543e" }}>출결</span> <b>{l.replace(/^출결:\s*/, "")}</b></>
+                    : /^\d+점$/.test(l.trim()) ? <b style={{ fontSize: 17, color: "#e2822f" }}>{l}</b>
+                    : (rest.length && sec.title.startsWith("오늘 할 일") ? <><span style={{ color: "#5c543e" }}>{k}</span> <b>{rest.join(" · ")}</b></> : l)}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12, padding: "8px 4px 2px", borderTop: "1px solid #d9ccab", fontSize: 10.5 }}>
+        <b style={{ color: "#e2822f" }}>수학상위권집합소</b><span style={{ color: "#2b2417" }}>최고의 경쟁력은 습관이다</span>
+      </div>
+    </div>
+  );
+}
+
+async function exportAlertCardImage(data, a) {
+  await loadScriptOnce("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+  const host = document.createElement("div");
+  host.style.cssText = "position:fixed;left:-10000px;top:0;z-index:-1;";
+  document.body.appendChild(host);
+  const root = ReactDOM.createRoot(host);
+  root.render(<AlertCard data={data} a={a} />);
+  await new Promise(r => setTimeout(r, 120));
+  try { await document.fonts.ready; } catch (e) { /* 무시 */ }
+  try {
+    const canvas = await window.html2canvas(host.firstChild, { scale: 2.5, backgroundColor: "#f6f1e4", logging: false });
+    const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
+    const st = data.students.find(s => s.id === a.studentId);
+    const d = alertDate(data, a);
+    const fileName = `${st?.name || "학생"}_${d ? d.slice(5).replace("-", "") : ""}_수업소식.png`;
+    const file = new File([blob], fileName, { type: "image/png" });
+    const isTouch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+    if (isTouch && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return; } catch (e) { if (e && e.name === "AbortError") return; }
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a"); link.href = url; link.download = fileName; document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } finally {
+    root.unmount(); host.remove();
+  }
+}
+
 // ================= ADMIN: 학부모 알림 =================
 function AlertsTab({ data, setData }) {
   const [copiedId, setCopiedId] = useState(null);
@@ -4308,7 +4425,14 @@ function AlertsTab({ data, setData }) {
   const studentPhone = (id) => data.students.find(s => s.id === id)?.parentPhone;
   const markSent = (id) => setData({ ...data, alerts: data.alerts.map(a => a.id === id ? { ...a, status: "삭제됨" } : a) });
   const remove = (id) => setData({ ...data, alerts: data.alerts.map(a => a.id === id ? { ...a, status: "삭제됨" } : a) });
-  const copy = async (a) => { try { await navigator.clipboard.writeText(a.message); setCopiedId(a.id); setTimeout(() => setCopiedId(null), 1500); } catch (e) {} };
+  const copy = async (a) => { try { await navigator.clipboard.writeText(prettyAlertText(data, a)); setCopiedId(a.id); setTimeout(() => setCopiedId(null), 1500); } catch (e) {} };
+  const [imgBusy, setImgBusy] = useState(null);
+  const sendImage = async (a) => {
+    setImgBusy(a.id);
+    try { await exportAlertCardImage(data, a); }
+    catch (e) { console.error("이미지 만들기 실패", e); alert("이미지를 만들지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요."); }
+    setImgBusy(null);
+  };
   const pending = data.alerts.filter(a => a.status === "대기").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const Row = ({ a }) => (
@@ -4320,12 +4444,13 @@ function AlertsTab({ data, setData }) {
           {studentPhone(a.studentId) && <span className="ml-2 text-xs" style={{ color: "#7a6f52" }}>{studentPhone(a.studentId)}</span>}
         </div>
         <div className="flex gap-1.5">
-          <button onClick={() => copy(a)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}>{copiedId === a.id ? <Check size={13} color="#4c8c5f" /> : <Copy size={13} color="#5c543e" />}</button>
+          <button onClick={() => sendImage(a)} disabled={imgBusy === a.id} className="px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1" style={{ background: "#173226", color: "#fff", opacity: imgBusy === a.id ? 0.6 : 1 }} title="학원 디자인 카드 이미지로 저장·공유">{imgBusy === a.id ? <Loader2 size={12} className="animate-spin" /> : "🖼"} 이미지</button>
+          <button onClick={() => copy(a)} className="px-2 py-1 rounded-md text-xs font-semibold flex items-center gap-1" style={{ background: "#efe3c8", color: "#5c543e" }} title="보기 좋게 다듬은 글 복사">{copiedId === a.id ? <Check size={13} color="#4c8c5f" /> : <Copy size={13} color="#5c543e" />}글</button>
           <button onClick={() => markSent(a.id)} className="px-2 py-1 rounded-md text-xs font-semibold" style={{ background: "#4c8c5f", color: "#fff" }}>발송완료</button>
           <button onClick={() => remove(a.id)} className="p-1.5 rounded-md" style={{ background: "#efe3c8" }}><Trash2 size={14} color="var(--coral)" /></button>
         </div>
       </div>
-      <div className="text-sm whitespace-pre-wrap" style={{ color: "#5c543e" }}>{a.message}</div>
+      <div className="text-sm whitespace-pre-wrap" style={{ color: "#5c543e" }}>{prettyAlertText(data, a)}</div>
     </li>
   );
 
@@ -4334,7 +4459,7 @@ function AlertsTab({ data, setData }) {
       <div className="rounded-2xl p-4" style={panel}>
         <h3 className="font-bold mb-3" style={{ fontFamily: "'Noto Serif KR', serif" }}>발송 대기 ({pending.length})</h3>
         {pending.length === 0 ? <EmptyState text="대기중인 알림이 없습니다." /> : <ul className="flex flex-col gap-2">{pending.map(a => <Row key={a.id} a={a} />)}</ul>}
-        <p className="text-[11px] mt-3" style={{ color: "#8a7f5e" }}>복사 버튼으로 메시지를 문자·카카오톡에 붙여넣어 보낼 수 있습니다. "발송완료"를 누르면 목록에서 바로 사라져요.</p>
+        <p className="text-[11px] mt-3" style={{ color: "#8a7f5e" }}><b>🖼 이미지</b>: 학원 디자인 카드로 만들어요 (폰은 공유 창에서 카카오톡 선택, PC는 이미지 파일 저장). <b>글</b>: 인사말·서명이 들어간 글을 복사해요. 이미지와 글을 같이 보내면 좋아요. "발송완료"를 누르면 목록에서 바로 사라져요.</p>
       </div>
     </div>
   );
