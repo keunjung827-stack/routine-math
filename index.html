@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-10-04-207";
+const APP_VERSION = "2026-10-06-209";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -4117,7 +4117,7 @@ function WeeklyRoutineBlock({ data, setData, studentId, weekStart, showAlertButt
   const struggleStreak = reviewStruggleStreak(data, studentId);
 
   const sendReport = () => {
-    const message = buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown, struggleStreak);
+    const message = buildWeeklyReportText(student, weekStart, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, reviewBreakdown, struggleStreak) + effWeeklyAlertBlock(data, studentId, weekStart);
     const alert = { id: uid(), studentId, sourceKey: `weekly:${studentId}:${weekStart}`, kind: "주간 루틴", message, status: "대기", createdAt: new Date().toISOString() };
     setData({ ...data, alerts: [...data.alerts, alert] });
   };
@@ -4305,8 +4305,43 @@ function StudentMessagesTab({ data, setData, studentId }) {
 
 // ===== 학부모 알림: 보기 좋은 글 + 이미지 카드 =====
 const MSG_SECTION_ICONS = [
-  [/^오늘 할 일/, "✅"], [/^오늘의 평가/, "📝"], [/^(선생님 )?코멘트$/, "💬"], [/^📘/, ""], [/^출결/, "🕘"],
+  [/^오늘 할 일/, "✅"], [/^오늘의 평가/, "📝"], [/^(선생님 )?코멘트$/, "💬"], [/^📘/, ""], [/^출결/, "🕘"], [/^이번 주 루틴/, "📊"],
 ];
+// 주간 알림에 붙는 이번 주 학습 효율 요약
+function effWeeklyAlertBlock(data, studentId, weekStart) {
+  const end = addDaysToDateStr(weekStart, 6);
+  const logs = (data.effLogs || []).filter(l => l.studentId === studentId && l.date >= weekStart && l.date <= end).sort((a, b) => a.date.localeCompare(b.date));
+  if (!logs.length) return "";
+  const st = effStats(logs.flatMap(l => effLogRows(l)));
+  const lines = [];
+  lines.push(`공부 ${fmtMin(st.minutes)} · ${st.problems}문제${st.accuracy == null ? "" : ` · 정답률 ${st.accuracy}%`}`);
+  const sub = [];
+  if (st.secPerProblem != null) sub.push(`문제당 ${fmtSec(st.secPerProblem)}`);
+  if (st.stuckCount) sub.push(`★ 막힌 문제 ${st.stuckCount}개${st.gaveUp ? ` (못 푼 ${st.gaveUp}개)` : ""}`);
+  if (sub.length) lines.push(sub.join(" · "));
+  logs.filter(l => (l.prescription || "").trim()).forEach(l => lines.push(`처방: ${l.prescription.trim()} (${shortMD(l.date)})`));
+  return `${EFF_ALERT_MARK.replace("학습 효율 기록", "이번 주 학습 효율")}\n${lines.join("\n")}`;
+}
+// 주간 알림은 보낼 때마다 그 주 학습 효율을 새로 계산해서 붙임 (예전에 만든 알림도, 나중에 입력한 기록도 반영)
+function alertMessageLive(data, a) {
+  const k = a.sourceKey || "";
+  if (!k.startsWith("weekly:")) return a.message;
+  const [, sid, ws] = k.split(":");
+  const base = (a.message || "").split(EFF_ALERT_MARK.replace("학습 효율 기록", "이번 주 학습 효율"))[0];
+  return base + effWeeklyAlertBlock(data, sid, ws);
+}
+// 알림 종류별 카드 제목·날짜
+function alertMeta(data, a) {
+  const k = a.sourceKey || "";
+  if (k.startsWith("weekly:")) {
+    const ws = k.split(":")[2] || "";
+    return { title: "이번 주 학습 소식", dateText: ws ? `${shortMD(ws)} ~ ${shortMD(addDaysToDateStr(ws, 6))}` : "", headLine: ws ? `🗓 ${shortMD(ws)}~${shortMD(addDaysToDateStr(ws, 6))}` : "🗓" };
+  }
+  if (a.kind === "월간 리포트") return { title: "월간 학습 리포트 안내", dateText: "", headLine: "🗓" };
+  const d = alertDate(data, a);
+  const isClass = k.startsWith("routine:") || k.startsWith("eff:");
+  return { title: isClass ? "수업 소식" : (a.kind || "소식"), dateText: d ? `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일` : "", headLine: d ? `🗓 ${shortMD(d)}` : "🗓" };
+}
 // 예전에 만든 알림도 같은 모양으로: "선생님" 빼기, "N (새로 배움)" 같은 기호 빼고 뜻만
 function cleanAlertLine(l) {
   return l
@@ -4324,24 +4359,32 @@ function alertDate(data, a) {
 // 저장된 알림 글 → 구역 목록 [{ title, lines }]
 function alertSections(message) {
   let lines = (message || "").split("\n");
+  let firstTitle = "";
   if (/^🌱/.test(lines[0] || "")) lines = lines.slice(2); // "오늘의 ROUTINE / 이름·학년" 머리줄은 카드 제목으로 대신
+  else if (/^📊/.test(lines[0] || "")) { lines = lines.slice(2); firstTitle = "이번 주 루틴"; }
   lines = lines.map(l => cleanAlertLine(l.replace(/^\[루틴수학\]\s*/, "")));
   const out = []; let cur = null;
   lines.forEach(l => {
     if (!l.trim()) { cur = null; return; }
     const isTitle = MSG_SECTION_ICONS.some(([re]) => re.test(l)) && !/^출결/.test(l);
     if (isTitle) { cur = { title: l.replace(/^📘\s*/, ""), lines: [] }; out.push(cur); return; }
-    if (!cur) { cur = { title: "", lines: [] }; out.push(cur); }
+    if (!cur) { cur = { title: out.length === 0 ? firstTitle : "", lines: [] }; out.push(cur); }
     cur.lines.push(l);
   });
+  // 주간 알림: 제목 없는 구역들을 "이번 주 루틴" 한 칸으로 합침
+  if (firstTitle) {
+    const merged = [];
+    out.forEach(s => { const last = merged[merged.length - 1]; if (!s.title && last && last.title === firstTitle) last.lines.push(...s.lines); else merged.push(s); });
+    return merged.filter(s => s.title || s.lines.length);
+  }
   return out.filter(s => s.title || s.lines.length);
 }
 // 카톡에 붙여넣을 보기 좋은 글
 function prettyAlertText(data, a) {
   const st = data.students.find(s => s.id === a.studentId);
-  const d = alertDate(data, a);
-  const head = `안녕하세요, 루틴수학학원입니다 😊\n🗓 ${d ? shortMD(d) + " " : ""}${st?.name || ""} 학생 수업 소식`;
-  const body = alertSections(a.message).map(sec => {
+  const meta = alertMeta(data, a);
+  const head = `안녕하세요, 루틴수학학원입니다 😊\n${meta.headLine} ${st?.name || ""} 학생 ${meta.title}`;
+  const body = alertSections(alertMessageLive(data, a)).map(sec => {
     const icon = (MSG_SECTION_ICONS.find(([re]) => re.test(sec.title)) || [null, ""])[1];
     const title = sec.title ? `${icon || "📘"} ${sec.title}` : "";
     const lines = sec.lines.map(l => l.replace(/^처방:\s*/, "💡 처방: ").replace(/^출결:/, "🕘 출결:"));
@@ -4352,16 +4395,16 @@ function prettyAlertText(data, a) {
 
 function AlertCard({ data, a }) {
   const st = data.students.find(s => s.id === a.studentId);
-  const d = alertDate(data, a);
-  const secs = alertSections(a.message);
+  const meta = alertMeta(data, a);
+  const secs = alertSections(alertMessageLive(data, a));
   const font = "Pretendard, 'Noto Sans KR', sans-serif";
   return (
     <div style={{ width: 420, background: "#f6f1e4", fontFamily: font, color: "#2b2417", padding: 14, boxSizing: "border-box" }}>
       <div style={{ background: "linear-gradient(180deg, #173226, #204233)", borderRadius: 16, padding: "16px 18px", color: "#f4efe1" }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: "#e2822f", fontFamily: "'Noto Serif KR', serif" }}>루틴수학학원</div>
         <div style={{ fontSize: 10, color: "#b9c9bd", marginTop: 2 }}>최고의 경쟁력은 습관이다</div>
-        <div style={{ fontSize: 19, fontWeight: 800, marginTop: 12, fontFamily: "'Noto Serif KR', serif" }}>{st?.name || ""} 학생 수업 소식</div>
-        <div style={{ fontSize: 12, color: "#d6e2d9", marginTop: 3 }}>{d ? `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일` : ""}{st?.grade ? ` · ${st.grade}` : ""}{st?.classGroup ? ` · ${st.classGroup}` : ""}</div>
+        <div style={{ fontSize: 19, fontWeight: 800, marginTop: 12, fontFamily: "'Noto Serif KR', serif" }}>{st?.name || ""} 학생 {meta.title}</div>
+        <div style={{ fontSize: 12, color: "#d6e2d9", marginTop: 3 }}>{[meta.dateText, st?.grade, st?.classGroup].filter(Boolean).join(" · ")}</div>
       </div>
       {secs.map((sec, i) => {
         const icon = (MSG_SECTION_ICONS.find(([re]) => re.test(sec.title)) || [null, ""])[1] || (sec.title ? "📘" : "");
@@ -4376,6 +4419,9 @@ function AlertCard({ data, a }) {
                   {presc ? `💡 ${l}`
                     : /^출결:/.test(l) ? <>🕘 <span style={{ color: "#5c543e" }}>출결</span> <b>{l.replace(/^출결:\s*/, "")}</b></>
                     : /^\d+점$/.test(l.trim()) ? <b style={{ fontSize: 17, color: "#e2822f" }}>{l}</b>
+                    : /^이번 주 실제 달성률/.test(l) ? <><span style={{ color: "#5c543e" }}>플래너 실제 달성률</span> <b style={{ fontSize: 17, color: "#e2822f" }}>{l.replace(/^이번 주 실제 달성률\s*/, "")}</b></>
+                    : /^⚠️/.test(l) ? <span style={{ color: "#c65a1f", fontWeight: 700 }}>{l}</span>
+                    : (sec.title === "이번 주 루틴" && /^(.+?)\s(\d+%|\d+점|\d+문제|기록없음|-)$/.test(l)) ? (() => { const m = l.match(/^(.+?)\s(\d+%|\d+점|\d+문제|기록없음|-)$/); return <><span style={{ color: "#5c543e" }}>{m[1]}</span> <b>{m[2]}</b></>; })()
                     : (rest.length && sec.title.startsWith("오늘 할 일") ? <><span style={{ color: "#5c543e" }}>{k}</span> <b>{rest.join(" · ")}</b></> : l)}
                 </div>
               );
@@ -4404,7 +4450,7 @@ async function exportAlertCardImage(data, a) {
     const blob = await new Promise(r => canvas.toBlob(r, "image/png"));
     const st = data.students.find(s => s.id === a.studentId);
     const d = alertDate(data, a);
-    const fileName = `${st?.name || "학생"}_${d ? d.slice(5).replace("-", "") : ""}_수업소식.png`;
+    const fileName = `${st?.name || "학생"}_${d ? d.slice(5).replace("-", "") : ""}_${(a.sourceKey || "").startsWith("weekly:") ? "주간소식" : "수업소식"}.png`;
     const file = new File([blob], fileName, { type: "image/png" });
     const isTouch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
     if (isTouch && navigator.canShare && navigator.canShare({ files: [file] })) {
