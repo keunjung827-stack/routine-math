@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-10-06-209";
+const APP_VERSION = "2026-10-12-210";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -2129,10 +2129,10 @@ function ProgressChartGrid({ chart, month, editable, onChange, ownerLabel }) {
   const cellStyle = (color, clickable) => ({ border: cellBorder, background: color || "#fff", minWidth: 34, height: 30, cursor: clickable ? "pointer" : "default", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" });
   const Row = ({ label, colorOf, onCell, labelStyle }) => (
     <tr>
-      <td style={{ ...headStyle, background: "#f4f6fa", whiteSpace: "nowrap", fontWeight: 500, ...labelStyle }}>{label}</td>
+      <td className="pc-week" style={{ ...headStyle, background: "#f4f6fa", whiteSpace: "nowrap", fontWeight: 500, ...labelStyle }}>{label}</td>
       {units.map(u => Array.from({ length: Math.max(1, Number(u.cells) || 1) }, (_, i) => {
         const cell = `${u.id}:${i}`;
-        return <td key={cell} style={cellStyle(colorOf(cell), !!onCell)} onClick={onCell ? () => onCell(cell) : undefined} />;
+        return <td key={cell} className="pc-cell" style={cellStyle(colorOf(cell), !!onCell)} onClick={onCell ? () => onCell(cell) : undefined} />;
       }))}
     </tr>
   );
@@ -2159,17 +2159,17 @@ function ProgressChartGrid({ chart, month, editable, onChange, ownerLabel }) {
           )}
         </div>
       </div>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ borderCollapse: "collapse", fontSize: 12, width: "100%" }}>
+      <div className="cq" style={{ overflowX: "auto" }}>
+        <table className="pc-table" style={{ borderCollapse: "collapse", fontSize: 12, width: "100%" }}>
           <thead>
             <tr>
-              <th rowSpan={hasSubLabels ? 2 : 1} style={{ ...headStyle, whiteSpace: "nowrap" }}>{chart.textbook || "주차"}</th>
-              {units.map(u => <th key={u.id} colSpan={Math.max(1, Number(u.cells) || 1)} style={headStyle}>{u.name}</th>)}
+              <th rowSpan={hasSubLabels ? 2 : 1} className="pc-week" style={{ ...headStyle, whiteSpace: "nowrap" }}>{chart.textbook || "주차"}</th>
+              {units.map(u => <th key={u.id} className="pc-unit" colSpan={Math.max(1, Number(u.cells) || 1)} style={headStyle}>{u.name}</th>)}
             </tr>
             {hasSubLabels && (
               <tr>
                 {units.map(u => Array.from({ length: Math.max(1, Number(u.cells) || 1) }, (_, i) => (
-                  <th key={`${u.id}:${i}`} style={{ ...headStyle, fontSize: 10, fontWeight: 500 }}>{(u.labels || [])[i] || ""}</th>
+                  <th key={`${u.id}:${i}`} className="pc-sub" style={{ ...headStyle, fontSize: 10, fontWeight: 500 }}>{(u.labels || [])[i] || ""}</th>
                 )))}
               </tr>
             )}
@@ -3477,7 +3477,7 @@ function EffReportSection({ data, studentId, month }) {
   const xOf = (i) => pts.length === 1 ? (pl + W - pr) / 2 : pl + i * ((W - pl - pr) / (pts.length - 1));
   const yOf = (s) => pt + (1 - (s - (minS - span * 0.15)) / (span * 1.3)) * (H - pt - pb);
   const th = { padding: "5px 6px", background: "#efe6d0", color: "#5c543e", fontWeight: 600, fontSize: 11, textAlign: "center" };
-  const td = { padding: "6px", borderTop: "1px solid #e4d8ba", fontSize: 12, textAlign: "center", color: "#2b2417" };
+  const td = { padding: "6px", borderTop: "1px solid #e4d8ba", fontSize: 12, textAlign: "center", color: "#2b2417", whiteSpace: "nowrap" };
   return (
     <div className="rounded-2xl p-4" style={panel}>
       <h3 className="font-bold mb-1" style={{ fontFamily: "'Noto Serif KR', serif", color: "#173226" }}>학습 효율 분석</h3>
@@ -3513,9 +3513,23 @@ function EffReportSection({ data, studentId, month }) {
           {EFF_KINDS.map(k => <span key={k} className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: EFF_KIND_COLORS[k], WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }} />{k} {Math.round((st.byKind[k] / total) * 100)}% ({fmtMin(st.byKind[k])})</span>)}
         </div>
       </div>
-      <div style={{ overflowX: "auto" }} className="mb-3">
+      <div className="cq mb-3">
+      <div className="eff-week-cards flex-col gap-2">
+        {weeks.filter(w => w.stats.minutes || w.presc).map(w => (
+          <div key={w.key} className="rounded-lg px-3 py-2.5" style={{ background: "#f4efe1" }}>
+            <div className="text-xs font-bold mb-1" style={{ color: "#173226" }}>{w.label}</div>
+            <div className="text-[12px] leading-relaxed" style={{ color: "#2b2417" }}>
+              {fmtMin(w.stats.minutes)} · {w.stats.problems}문제{w.stats.accuracy == null ? "" : ` · 정답률 ${w.stats.accuracy}%`}<br />
+              문제당 {fmtSec(w.stats.secPerProblem)} · ★ {w.stats.stuckCount}개{w.stats.gaveUp ? ` (못 푼 ${w.stats.gaveUp})` : ""}
+            </div>
+            {w.presc && <div className="text-[12px] mt-1.5 px-2 py-1.5 rounded-md font-semibold" style={{ background: "#fdecd8", color: "#8a3a0f" }}>💡 {w.presc}</div>}
+          </div>
+        ))}
+        {weeks.some(w => !w.stats.minutes && !w.presc) && <div className="text-[11px]" style={{ color: "#8a7f5e" }}>기록 없는 주: {weeks.filter(w => !w.stats.minutes && !w.presc).map(w => w.label).join(", ")}</div>}
+      </div>
+      <div className="eff-week-table" style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr>{["주", "학습시간", "문제", "정답률", "문제당", "★막힘", "처방"].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{["주", "학습시간", "문제", "정답률", "문제당", "★막힘", "처방"].map(h => <th key={h} style={{ ...th, whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
           <tbody>
             {weeks.map(w => (
               <tr key={w.key}>
@@ -3525,11 +3539,12 @@ function EffReportSection({ data, studentId, month }) {
                 <td style={td}>{w.stats.accuracy == null ? "-" : `${w.stats.accuracy}%`}</td>
                 <td style={td}>{fmtSec(w.stats.secPerProblem)}</td>
                 <td style={td}>{w.stats.minutes ? `${w.stats.stuckCount}개${w.stats.gaveUp ? ` (✕${w.stats.gaveUp})` : ""}` : "-"}</td>
-                <td style={{ ...td, textAlign: "left" }}>{w.presc || "-"}</td>
+                <td style={{ ...td, textAlign: "left", whiteSpace: "normal", minWidth: 140 }}>{w.presc || "-"}</td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
       </div>
       {pts.length > 0 && (
         <div className="avoid-break">
@@ -7019,7 +7034,7 @@ function App() {
       <button onClick={() => refreshNow && refreshNow()} title="누르면 서버에서 최신 내용을 바로 받아와요" className="print-hide" style={{ position: "fixed", right: 8, bottom: "calc(6px + env(safe-area-inset-bottom, 0px))", fontSize: 10, color: "#a89d84", opacity: 0.85, zIndex: 5, background: "transparent" }}>
         v{APP_VERSION}{lastSyncAt ? ` · 동기화 ${new Date(lastSyncAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })} ↻` : ""}
       </button>
-      <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; } @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 16px; } #print-area input, #print-area textarea { border: none !important; background: transparent !important; padding: 0 !important; resize: none; } .print-hide { display: none !important; } #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } #print-area .avoid-break, #print-area .keep-together, #print-area p, #print-area .grid > div, #print-area .rounded-lg, #print-area .rounded-xl, #print-area tr, #print-area svg, #print-area table { break-inside: avoid; page-break-inside: avoid; } #print-area h3, #print-area h4 { break-after: avoid; page-break-after: avoid; } #print-area { display: table !important; } #print-area > * { margin-bottom: 16px; } #print-area .print-footer-space { display: table-footer-group !important; } #print-area .print-footer-space > div { height: 14mm; } #print-area .print-header-space { display: table-header-group !important; } #print-area .print-header-space > div { height: 14mm; } #print-area .print-footer { display: flex !important; position: fixed; left: 16px; right: 16px; bottom: 0; } } .print-only { display: none; }`}</style>
+      <style>{`* { font-family: 'Pretendard', sans-serif; } h1,h2,h3 { color: #2b2417; } input:focus, select:focus, textarea:focus { border-color: var(--gold) !important; } @media print { body * { visibility: hidden; } #print-area, #print-area * { visibility: visible; } #print-area { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 16px; } #print-area input, #print-area textarea { border: none !important; background: transparent !important; padding: 0 !important; resize: none; } .print-hide { display: none !important; } #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } #print-area .avoid-break, #print-area .keep-together, #print-area p, #print-area .grid > div, #print-area .rounded-lg, #print-area .rounded-xl, #print-area tr, #print-area svg, #print-area table { break-inside: avoid; page-break-inside: avoid; } #print-area h3, #print-area h4 { break-after: avoid; page-break-after: avoid; } #print-area { display: table !important; } #print-area > * { margin-bottom: 16px; } #print-area .print-footer-space { display: table-footer-group !important; } #print-area .print-footer-space > div { height: 14mm; } #print-area .print-header-space { display: table-header-group !important; } #print-area .print-header-space > div { height: 14mm; } #print-area .print-footer { display: flex !important; position: fixed; left: 16px; right: 16px; bottom: 0; } } .print-only { display: none; } .cq { container-type: inline-size; } .eff-week-cards { display: none; flex-direction: column; gap: 8px; } @container (max-width: 560px) { .eff-week-table { display: none !important; } .eff-week-cards { display: flex !important; } .pc-table { font-size: 10px !important; } .pc-table th, .pc-table td { padding: 2px 2px !important; min-width: 0 !important; } .pc-table .pc-unit { font-size: 10px !important; word-break: keep-all; } .pc-table .pc-sub { font-size: 9px !important; writing-mode: vertical-rl; text-orientation: upright; letter-spacing: -1px; line-height: 1.05; padding: 4px 1px !important; white-space: nowrap; } .pc-table .pc-week { font-size: 9.5px !important; padding: 2px 4px !important; } .pc-table td.pc-cell { height: 22px !important; } }`}</style>
 
       {view === "gate" && <RoleGate onStudent={() => setView("studentLogin")} onTeacher={() => setView("teacherLogin")} onAdmin={() => setView("adminGate")} />}
 
