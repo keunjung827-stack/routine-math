@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-10-13-214";
+const APP_VERSION = "2026-10-22-215";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -449,6 +449,7 @@ const emptyData = () => ({
   timerDrafts: {},
   announcements: [],
   monthlyReports: {},
+  growthBonus: [],
 });
 
 // ---- 메인 데이터 전용 저장 함수 ----
@@ -4059,6 +4060,258 @@ function BadgeStatusTab({ data, scopeClassGroups }) {
   );
 }
 
+// ================= 새싹 루티 (초등 성장형 캐릭터) =================
+// 점수는 따로 저장하지 않고, 선생님·앱이 이미 기록한 내용(출석·오늘의 루틴·플래너 확인·효율지 힌트 결과·칭찬 점수)에서 매번 계산함
+// → 학생이 스스로 체크한 것만으로는 점수가 오르지 않고, 기록을 고치면 점수도 같이 고쳐짐
+const GROWTH_GRADES = ["초4", "초5", "초6"];
+const GROWTH_DEFAULT_START = "2026-10-23";
+const isGrowthStudent = (s) => !!s && GROWTH_GRADES.includes(s.grade);
+const GROWTH_STAGES = [
+  { min: 0, name: "씨앗 루티", say: "안녕! 나는 씨앗 루티야. 같이 공부하면서 자라볼까?" },
+  { min: 30, name: "새싹 루티", say: "와, 싹이 났어! 오늘도 루틴 지켜줘서 고마워." },
+  { min: 120, name: "떡잎 루티", say: "잎이 두 장이 됐어. 꾸준함이 나를 키워줘!" },
+  { min: 300, name: "묘목 루티", say: "키가 쑥 컸어! 혼자 다시 풀어낸 문제가 제일 좋은 거름이야." },
+  { min: 600, name: "나무 루티", say: "이제 진짜 나무야. 습관이 뿌리를 단단하게 해줬어." },
+  { min: 1000, name: "열매 루티", say: "열매가 열렸어! 최고의 경쟁력은 습관이야." },
+];
+const GROWTH_RULES = [
+  ["출석", "+3"], ["지각해도 출석", "+1"], ["숙제 기한 내 제출", "+5"], ["숙제 늦게라도 제출", "+2"],
+  ["개념복습 완료", "+3"], ["문제풀이 정답률 80% 이상", "+3"], ["일일테스트 통과", "+5"], ["플래너 선생님 확인", "+2"],
+  ["막힌 문제 혼자 다시 해결", "+5"], ["막힌 문제 힌트 후 해결", "+2"], ["선생님 칭찬 점수", "직접 입력"],
+];
+function growthEvents(data, studentId) {
+  const start = data.growthStart || GROWTH_DEFAULT_START;
+  const ev = [];
+  const push = (date, label, pts, id) => { if (date && date >= start && pts) ev.push({ date, label, pts, id }); };
+  (data.attendance || []).filter(a => a.studentId === studentId).forEach(a => push(a.date, a.status === "지각" ? "출석 (지각)" : "출석", a.status === "출석" ? 3 : (a.status === "지각" ? 1 : 0)));
+  (data.routines || []).filter(r => r.studentId === studentId).forEach(r => {
+    const val = (k) => (r.items || []).find(x => x.key === k)?.result;
+    const hw = val("homework");
+    if (hw === "완료") push(r.date, "숙제 기한 내 제출", 5); else if (hw === "기한초과") push(r.date, "숙제 늦게 제출", 2);
+    if (val("review") === "C") push(r.date, "개념복습 완료", 3);
+    const pc = Number(val("practice")) || 0, wc = Number(val("wrong")) || 0;
+    if (pc > 0 && (pc - wc) / pc >= 0.8) push(r.date, "문제풀이 정답률 80% 이상", 3);
+    if (r.testScore != null && r.testScore !== "" && Number(r.testScore) >= (Number(r.testPassLine) || PASS_RATE)) push(r.date, `${r.testType || "테스트"} 통과`, 5);
+  });
+  (data.plannerChecks || []).filter(c => c.studentId === studentId && c.checked !== false).forEach(c => push(c.date, "플래너 선생님 확인", 2));
+  (data.effLogs || []).filter(l => l.studentId === studentId).forEach(l => {
+    effHintItems(l).forEach(it => {
+      if (it.result === "self") push(l.date, `막힌 ${it.no}번 혼자 다시 해결`, 5);
+      else if (it.result === "solved") push(l.date, `막힌 ${it.no}번 힌트 후 해결`, 2);
+    });
+  });
+  (data.growthBonus || []).filter(b => b.studentId === studentId).forEach(b => push(b.date, b.reason ? `칭찬 · ${b.reason}` : "선생님 칭찬", Number(b.points) || 0, b.id));
+  return ev.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}
+function growthSummary(data, studentId) {
+  const events = growthEvents(data, studentId);
+  const total = Math.max(0, events.reduce((s, e) => s + e.pts, 0));
+  let stage = 0;
+  GROWTH_STAGES.forEach((g, i) => { if (total >= g.min) stage = i; });
+  const next = GROWTH_STAGES[stage + 1] || null;
+  const cur = GROWTH_STAGES[stage];
+  const pct = next ? Math.round(((total - cur.min) / (next.min - cur.min)) * 100) : 100;
+  return { events, total, stage, cur, next, pct, toNext: next ? next.min - total : 0 };
+}
+
+// 화분에 얼굴이 있는 루티. stage 0~5 에 따라 식물이 자람
+function GrowthCharacter({ stage = 0, size = 96, locked = false }) {
+  const leaf = "#3d9a50", leafDark = "#2f7d40", leafLight = "#6cbf6a", trunk = "#8a5a33";
+  const L = (cx, cy, rx, ry, rot, c = leaf) => <ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill={c} transform={`rotate(${rot} ${cx} ${cy})`} />;
+  let plant = null;
+  if (stage === 0) plant = (
+    <g><ellipse cx="60" cy="72" rx="7" ry="5.5" fill="#a0703f" /><path d="M57 70 q3 -3 6 0" stroke="#6e4a26" strokeWidth="1.2" fill="none" /></g>
+  );
+  else if (stage === 1) plant = (
+    <g><path d="M60 76 C60 68 60 63 60 58" stroke={leafDark} strokeWidth="3" strokeLinecap="round" fill="none" />{L(53, 57, 7, 4, -25, leafLight)}{L(67, 57, 7, 4, 25, leafLight)}</g>
+  );
+  else if (stage === 2) plant = (
+    <g><path d="M60 76 C60 62 60 52 60 44" stroke={leafDark} strokeWidth="3.4" strokeLinecap="round" fill="none" />{L(48, 44, 12, 6.5, -20)}{L(72, 44, 12, 6.5, 20)}</g>
+  );
+  else if (stage === 3) plant = (
+    <g><path d="M60 76 C59 60 61 44 60 30" stroke={trunk} strokeWidth="4" strokeLinecap="round" fill="none" />
+      {L(49, 56, 10, 5.5, -25)}{L(71, 52, 10, 5.5, 25)}{L(50, 38, 10, 5.5, -30, leafLight)}{L(70, 34, 10, 5.5, 30, leafLight)}{L(60, 26, 5, 8, 0)}</g>
+  );
+  else plant = (
+    <g><path d="M57 76 L57 50 Q60 44 63 50 L63 76 Z" fill={trunk} />
+      <circle cx="44" cy="40" r="15" fill={leafDark} /><circle cx="76" cy="40" r="15" fill={leafDark} /><circle cx="60" cy="28" r="19" fill={leaf} /><circle cx="49" cy="33" r="10" fill={leafLight} opacity="0.55" />
+      {stage >= 5 && (<g><circle cx="44" cy="44" r="4.5" fill="#e2822f" /><circle cx="73" cy="36" r="4.5" fill="#e2822f" /><circle cx="62" cy="20" r="4.5" fill="#e2822f" /><circle cx="78" cy="48" r="4" fill="#e2822f" />
+        <path d="M95 14 l2 5 5 2 -5 2 -2 5 -2 -5 -5 -2 5 -2z" fill="#f2b33d" /><path d="M22 22 l1.5 3.5 3.5 1.5 -3.5 1.5 -1.5 3.5 -1.5 -3.5 -3.5 -1.5 3.5 -1.5z" fill="#f2b33d" /></g>)}</g>
+  );
+  return (
+    <svg width={size} height={size} viewBox="0 0 120 120" style={locked ? { filter: "grayscale(1)", opacity: 0.32 } : undefined} aria-hidden="true">
+      {plant}
+      <ellipse cx="60" cy="78" rx="30" ry="5" fill="#5b3b22" />
+      <path d="M30 80 L90 80 L84 112 Q83 115 80 115 L40 115 Q37 115 36 112 Z" fill="#e2822f" />
+      <rect x="27" y="75" width="66" height="9" rx="4" fill="#c65a1f" />
+      <circle cx="50" cy="95" r="3.2" fill="#2b2417" /><circle cx="70" cy="95" r="3.2" fill="#2b2417" />
+      <circle cx="51" cy="94" r="1" fill="#fff" /><circle cx="71" cy="94" r="1" fill="#fff" />
+      <ellipse cx="44" cy="102" rx="4" ry="2.4" fill="#f4a3a0" opacity="0.8" /><ellipse cx="76" cy="102" rx="4" ry="2.4" fill="#f4a3a0" opacity="0.8" />
+      <path d="M55 101 Q60 106 65 101" stroke="#2b2417" strokeWidth="2" strokeLinecap="round" fill="none" />
+    </svg>
+  );
+}
+
+function GrowthStageStrip({ stage }) {
+  return (
+    <div className="grid grid-cols-6 gap-1 mt-3">
+      {GROWTH_STAGES.map((g, i) => (
+        <div key={i} className="flex flex-col items-center">
+          <GrowthCharacter stage={i} size={40} locked={i > stage} />
+          <span className="text-[10px] font-semibold" style={{ color: i === stage ? "#173226" : (i < stage ? "#5c543e" : "#b5aa8c") }}>{g.min}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// 학생 홈 맨 위에 보이는 카드 (초등만)
+function StudentGrowthCard({ data, setData, studentId }) {
+  const student = data.students.find(s => s.id === studentId);
+  const g = growthSummary(data, studentId);
+  const [showAll, setShowAll] = useState(false);
+  const seen = student?.growthSeenStage ?? 0;
+  const grewUp = g.stage > seen;
+  useEffect(() => {
+    if (!grewUp) return;
+    const t = setTimeout(() => {
+      setData({ ...data, students: data.students.map(s => s.id === studentId ? { ...s, growthSeenStage: g.stage } : s) });
+    }, 6000); // 축하 메시지를 잠깐 보여준 뒤 확인 처리
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grewUp, g.stage]);
+  const list = showAll ? g.events.slice(0, 30) : g.events.slice(0, 4);
+  return (
+    <div className="rounded-2xl p-4 mb-4" style={{ background: "#fffcf6", border: "1px solid #e4d8ba", borderTop: "3px solid #3d9a50" }}>
+      {grewUp && (
+        <div className="rounded-xl px-3 py-2 mb-3 text-sm font-bold text-center" style={{ background: "#e3f1dc", color: "#2f7d40" }}>🎉 루티가 {g.cur.name}로 자랐어요!</div>
+      )}
+      <div className="flex gap-3 items-center">
+        <div className="rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: "#f4efe1", width: 104, height: 104 }}>
+          <GrowthCharacter stage={g.stage} size={96} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-bold" style={{ color: "#173226" }}>{g.cur.name}</span>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: "#e3f1dc", color: "#2f7d40" }}>Lv.{g.stage + 1}</span>
+          </div>
+          <div className="flex items-baseline gap-0.5 mt-0.5"><span className="text-3xl font-bold" style={{ color: "#2b2417" }}>{g.total}</span><span className="text-xs" style={{ color: "#7a6f52" }}>점</span></div>
+          <div className="h-2.5 rounded-full mt-1.5 overflow-hidden" style={{ background: "#efe6d0" }}>
+            <div className="h-full rounded-full" style={{ width: `${Math.max(3, g.pct)}%`, background: "#3d9a50" }} />
+          </div>
+          <div className="text-[11px] mt-1" style={{ color: "#7a6f52" }}>{g.next ? `다음 성장까지 ${g.toNext}점 · ${g.next.name}` : "최고 단계까지 자랐어요!"}</div>
+        </div>
+      </div>
+      <div className="relative mt-3 rounded-xl px-3 py-2 text-sm" style={{ background: "#f4efe1", color: "#2b2417" }}>
+        <span className="absolute" style={{ top: -6, left: 46, width: 12, height: 12, background: "#f4efe1", transform: "rotate(45deg)" }} />
+        <span className="relative">{g.cur.say}</span>
+      </div>
+      <GrowthStageStrip stage={g.stage} />
+      <div className="mt-3 pt-3" style={{ borderTop: "1px dashed #e4d8ba" }}>
+        <div className="text-xs font-bold mb-1.5" style={{ color: "#173226" }}>최근 받은 점수</div>
+        {g.events.length === 0 ? <p className="text-xs" style={{ color: "#8a7f5e" }}>출석하고 숙제를 내면 점수가 쌓여요. 혼자 다시 풀어낸 문제는 +5점!</p> : (
+          <ul className="flex flex-col">
+            {list.map((e, i) => (
+              <li key={i} className="flex items-center justify-between py-1.5 text-sm" style={{ borderTop: i ? "1px solid #f0e8d4" : "none" }}>
+                <span style={{ color: "#4a4332" }}>{e.label} <span className="text-xs" style={{ color: "#8a7f5e" }}>· {shortMD(e.date)}</span></span>
+                <span className="font-bold" style={{ color: e.pts > 0 ? "#3d9a50" : "var(--coral)" }}>{e.pts > 0 ? "+" : ""}{e.pts}점</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {g.events.length > 4 && <button onClick={() => setShowAll(!showAll)} className="text-[11px] font-semibold mt-1" style={{ color: "#7a6f52" }}>{showAll ? "접기" : "더 보기"}</button>}
+      </div>
+    </div>
+  );
+}
+
+// 관리자·강사: 초등 학생 루티 현황 + 칭찬 점수 주기
+function GrowthAdminTab({ data, setData, scopeClassGroups, canEditSettings = true }) {
+  const students = studentsInScope(data.students, scopeClassGroups).filter(isGrowthStudent);
+  const [openId, setOpenId] = useState(null);
+  const [pts, setPts] = useState("5");
+  const [reason, setReason] = useState("");
+  const [showRules, setShowRules] = useState(false);
+  const start = data.growthStart || GROWTH_DEFAULT_START;
+  const rows = students.map(s => ({ s, g: growthSummary(data, s.id) })).sort((a, b) => (a.s.classGroup || "").localeCompare(b.s.classGroup || "") || a.s.name.localeCompare(b.s.name));
+  const addBonus = (studentId) => {
+    const n = Number(pts);
+    if (!n) return;
+    setData({ ...data, growthBonus: [...(data.growthBonus || []), { id: uid(), studentId, date: todayStr(), points: n, reason: reason.trim(), createdAt: new Date().toISOString() }] });
+    setReason("");
+  };
+  const removeBonus = (id) => { if (confirm("이 칭찬 점수를 지울까요?")) setData({ ...data, growthBonus: (data.growthBonus || []).filter(b => b.id !== id) }); };
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl p-4" style={panel}>
+        <h3 className="font-bold mb-1 flex items-center gap-2" style={{ fontFamily: "'Noto Serif KR', serif" }}><Award size={18} color="#3d9a50" />새싹 루티 (초4~초6)</h3>
+        <p className="text-xs mb-2" style={{ color: "#7a6f52" }}>초등 학생 홈 화면 맨 위에 루티 캐릭터가 보여요. 점수는 이미 입력하는 기록(출석·오늘의 루틴·플래너 확인·효율지 힌트 결과)에서 자동으로 계산돼요. 학생이 스스로 체크한 것만으로는 오르지 않아요. 순위는 보여주지 않아요.</p>
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          <span style={{ color: "#5c543e" }}>점수 시작일</span>
+          {canEditSettings ? <input type="date" className={inputCls} style={{ ...inputStyle, padding: "4px 6px", width: "auto" }} value={start} onChange={e => e.target.value && setData({ ...data, growthStart: e.target.value })} /> : <b>{start}</b>}
+          <button onClick={() => setShowRules(!showRules)} className="px-2 py-1 rounded-md font-semibold" style={{ border: "1px solid #ddcda0", color: "#5c543e" }}>{showRules ? "점수 규칙 접기" : "점수 규칙 보기"}</button>
+        </div>
+        {showRules && (
+          <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs rounded-lg p-2.5" style={{ background: "#f4efe1", color: "#4a4332" }}>
+            {GROWTH_RULES.map(([k, v]) => <div key={k} className="flex justify-between gap-2"><span>{k}</span><b style={{ color: "#3d9a50" }}>{v}</b></div>)}
+            <div className="col-span-2 mt-1" style={{ color: "#7a6f52" }}>단계: {GROWTH_STAGES.map(g => `${g.name.replace(" 루티", "")} ${g.min}`).join(" → ")}점</div>
+          </div>
+        )}
+      </div>
+      {rows.length === 0 ? <EmptyState text="초4~초6 학생이 없어요. 학생 명부에서 학년을 확인해주세요." /> : (
+        <ul className="flex flex-col gap-2">
+          {rows.map(({ s, g }) => {
+            const open = openId === s.id;
+            const bonuses = (data.growthBonus || []).filter(b => b.studentId === s.id).sort((a, b) => (b.createdAt || b.date).localeCompare(a.createdAt || a.date));
+            return (
+              <li key={s.id} className="rounded-2xl overflow-hidden" style={panel}>
+                <button onClick={() => setOpenId(open ? null : s.id)} className="w-full flex items-center gap-3 p-3 text-left">
+                  <GrowthCharacter stage={g.stage} size={44} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold" style={{ color: "#2b2417" }}>{s.name} <span className="text-xs font-normal" style={{ color: "#7a6f52" }}>{s.classGroup || s.grade}</span></div>
+                    <div className="text-[11px]" style={{ color: "#7a6f52" }}>{g.cur.name} · {g.next ? `다음까지 ${g.toNext}점` : "최고 단계"}</div>
+                  </div>
+                  <span className="text-lg font-bold" style={{ color: "#3d9a50" }}>{g.total}<span className="text-xs font-normal" style={{ color: "#7a6f52" }}>점</span></span>
+                </button>
+                {open && (
+                  <div className="px-3 pb-3 flex flex-col gap-2" style={{ borderTop: "1px dashed #e4d8ba" }}>
+                    <div className="text-xs font-semibold pt-2" style={{ color: "#173226" }}>칭찬 점수 주기</div>
+                    <div className="flex gap-1.5 flex-wrap items-center">
+                      {["3", "5", "10", "-3"].map(v => (
+                        <button key={v} onClick={() => setPts(v)} className="px-2.5 py-1 rounded-md text-xs font-semibold" style={pts === v ? { background: Number(v) > 0 ? "#3d9a50" : "var(--coral)", color: "#fff" } : { border: "1px solid #ddcda0", color: "#5c543e" }}>{Number(v) > 0 ? `+${v}` : v}</button>
+                      ))}
+                      <input className={inputCls} style={{ ...inputStyle, padding: "5px 8px", flex: 1, minWidth: 120 }} value={reason} onChange={e => setReason(e.target.value)} placeholder="이유 (예: 시험 성적 향상)" />
+                      <button onClick={() => addBonus(s.id)} className="px-3 py-1 rounded-md text-xs font-semibold" style={{ background: "#2b2417", color: "#fff" }}>주기</button>
+                    </div>
+                    {bonuses.length > 0 && (
+                      <ul className="flex flex-col gap-1">
+                        {bonuses.slice(0, 8).map(b => (
+                          <li key={b.id} className="flex items-center justify-between text-xs rounded-md px-2 py-1" style={{ background: "#f4efe1" }}>
+                            <span style={{ color: "#4a4332" }}>{shortMD(b.date)} · {b.reason || "선생님 칭찬"}{b.date < start ? <span style={{ color: "#b5aa8c" }}> (시작일 전이라 미반영)</span> : null}</span>
+                            <span className="flex items-center gap-2"><b style={{ color: Number(b.points) > 0 ? "#3d9a50" : "var(--coral)" }}>{Number(b.points) > 0 ? "+" : ""}{b.points}</b><button onClick={() => removeBonus(b.id)}><X size={12} color="#8a7f5e" /></button></span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="text-xs font-semibold pt-1" style={{ color: "#173226" }}>최근 받은 점수</div>
+                    {g.events.length === 0 ? <p className="text-xs" style={{ color: "#8a7f5e" }}>아직 쌓인 점수가 없어요.</p> : (
+                      <ul className="flex flex-col text-xs">
+                        {g.events.slice(0, 10).map((e, i) => (
+                          <li key={i} className="flex justify-between py-1" style={{ borderTop: i ? "1px solid #f0e8d4" : "none", color: "#4a4332" }}><span>{shortMD(e.date)} · {e.label}</span><b style={{ color: e.pts > 0 ? "#3d9a50" : "var(--coral)" }}>{e.pts > 0 ? "+" : ""}{e.pts}</b></li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function studyStreak(data, studentId) {
   const dateSet = new Set(data.plannerBlocks.filter(b => b.studentId === studentId && b.done).map(b => b.date));
   if (dateSet.size === 0) return 0;
@@ -5341,13 +5594,13 @@ const COMPONENT_MAP = {
   videos: VideosTab, routine: AdminRoutineTab, alerts: AlertsTab,
   rules: RulesTab, attendance: AttendanceTab, teachers: TeachersTab,
   requests: RequestsTab, dailyRoutine: DailyRoutineTab, weeklyRoutine: WeeklyRoutineTab, announcements: AnnouncementsTab, monthlyReport: MonthlyReportBuilder, progressChart: ProgressChartTab, syllabus: SyllabusTab, efficiency: EfficiencyTab,
-  eduPhilosophy: EduPhilosophyTab, curriculum: CurriculumTab, today: TodayChecklistTab, classSchedule: ClassScheduleTab, messages: MessagesTab, badges: BadgeStatusTab,
+  eduPhilosophy: EduPhilosophyTab, curriculum: CurriculumTab, today: TodayChecklistTab, classSchedule: ClassScheduleTab, messages: MessagesTab, badges: BadgeStatusTab, growth: GrowthAdminTab,
 };
 
 const GROUPS = [
   { id: "dashboard", label: "대시보드", icon: Home, accent: "#4c8c5f", tabs: [{ id: "dashboard", label: "요약" }, { id: "today", label: "오늘 할 일" }] },
   { id: "students", label: "학생 관리", icon: Users, accent: "#4c8c5f", tabs: [{ id: "students", label: "학생 명부" }, { id: "routine", label: "루틴체크" }] },
-  { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "monthlyReport", label: "월간 리포트" }, { id: "progressChart", label: "진도표" }, { id: "syllabus", label: "수업계획표" }, { id: "efficiency", label: "학습 효율" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }, { id: "badges", label: "칭찬배지" }] },
+  { id: "learning", label: "학습 기록", icon: ClipboardList, accent: "#7a8cc4", tabs: [{ id: "dailyRoutine", label: "오늘의 루틴" }, { id: "weeklyRoutine", label: "주간 루틴" }, { id: "monthlyReport", label: "월간 리포트" }, { id: "progressChart", label: "진도표" }, { id: "syllabus", label: "수업계획표" }, { id: "efficiency", label: "학습 효율" }, { id: "homework", label: "숙제 제출" }, { id: "tests", label: "테스트 결과" }, { id: "attendance", label: "출결기록" }, { id: "badges", label: "칭찬배지" }, { id: "growth", label: "새싹 루티(초등)" }] },
   { id: "schedule", label: "일정·자습실", icon: CalendarClock, accent: "#e2822f", tabs: [{ id: "sessions", label: "보강·클리닉" }, { id: "requests", label: "결석신고" }, { id: "seats", label: "자습실 관리" }] },
   { id: "classroom", label: "강의실", icon: BookOpen, accent: "#c65a1f", tabs: [{ id: "videos", label: "강의 업로드" }, { id: "curriculum", label: "커리큘럼" }, { id: "eduPhilosophy", label: "교육관" }, { id: "classSchedule", label: "반 시간표" }] },
   { id: "comm", label: "소통", icon: Bell, accent: "#c65a1f", tabs: [{ id: "alerts", label: "학부모 알림" }, { id: "requests", label: "요청함" }, { id: "messages", label: "1:1 문의" }, { id: "announcements", label: "공지사항 (휴원 등)" }] },
@@ -5835,6 +6088,7 @@ const TEACHER_TABS = [
   { id: "classSchedule", label: "반 시간표", icon: CalendarClock },
   { id: "tests", label: "테스트기록", icon: ClipboardCheck },
   { id: "badges", label: "칭찬배지", icon: Award },
+  { id: "growth", label: "새싹 루티", icon: Award },
   { id: "sessions", label: "보강·클리닉", icon: CalendarClock },
   { id: "attendance", label: "출결기록", icon: ClipboardSignature },
   { id: "comments", label: "코멘트", icon: MessageSquare },
@@ -5884,6 +6138,7 @@ function TeacherHome({ data, setData, patchData, teacher, onLogout }) {
       {tab === "classSchedule" && <ClassScheduleTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "tests" && <TestsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "badges" && <BadgeStatusTab data={data} scopeClassGroups={teacher.classGroups} />}
+      {tab === "growth" && <GrowthAdminTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} canEditSettings={false} />}
       {tab === "sessions" && <SessionsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "attendance" && <AttendanceTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
       {tab === "comments" && <TeacherCommentsTab data={data} setData={setData} scopeClassGroups={teacher.classGroups} />}
@@ -6819,6 +7074,7 @@ function StudentHome({ data, setData, studentId, onLogout }) {
           )}
         </div>
       )}
+      {isGrowthStudent(student) && <StudentGrowthCard data={data} setData={setData} studentId={studentId} />}
       <div className="flex gap-2 mb-4 flex-wrap">
         {STUDENT_TABS.map(t => {
           const Icon = t.icon; const active = tab === t.id;
