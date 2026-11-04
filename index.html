@@ -79,7 +79,7 @@ const SUPABASE_URL = "https://gbaxwyxmewmutgwtiwnw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_sOsFD0N8qJxxURJDwLgY3A_0_I3uiWb";
 
 // 새 버전 배포할 때마다 이 값과 version.txt 안의 값을 함께 올려주세요 (둘이 다르면 학생 화면이 자동 새로고침돼요)
-const APP_VERSION = "2026-10-22-215";
+const APP_VERSION = "2026-11-04-216";
 
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const TABLE = "app_storage";
@@ -1887,9 +1887,21 @@ function monthlyRoutineStats(data, studentId, monthStr) {
   return { monthRoutines, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy };
 }
 
+// 그달 순공 기록을 날짜·시각 순으로. 날짜·시각·과목이 완전히 같은 기록(같은 공부가 두 번 저장된 것)은 dup 표시 후 합계에서 뺌
+const STUDY_BLOCK_WARN_MIN = 300; // 한 번에 5시간 이상이면 "확인 필요" 표시 (타이머를 안 끄고 둔 경우 등)
+function studyBlocksForMonth(data, studentId, monthStr) {
+  const seen = new Set();
+  return (data.plannerBlocks || []).filter(b => b.studentId === studentId && b.done && (b.date || "").slice(0, 7) === monthStr)
+    .slice().sort((a, b) => (a.date + (a.start || "")).localeCompare(b.date + (b.start || "")))
+    .map(b => {
+      const k = `${b.date}|${b.start}|${b.end}|${b.subject || ""}`;
+      const dup = seen.has(k); seen.add(k);
+      const minutes = minutesBetween(b.start, b.end);
+      return { ...b, minutes, dup, long: minutes >= STUDY_BLOCK_WARN_MIN };
+    });
+}
 function monthlyStudyMinutes(data, studentId, monthStr) {
-  return data.plannerBlocks.filter(b => b.studentId === studentId && b.done && b.date.slice(0, 7) === monthStr)
-    .reduce((s, b) => s + minutesBetween(b.start, b.end), 0);
+  return studyBlocksForMonth(data, studentId, monthStr).filter(b => !b.dup).reduce((s, b) => s + b.minutes, 0);
 }
 
 function monthlyHomeworkSubmitRate(data, studentId, monthStr) {
@@ -3942,6 +3954,12 @@ function MonthlyRoutineBlock({ data, setData, studentId, month, showAlertButton 
   const overall = monthlyPlannerTaskRate(data, studentId, month);
   const studyMinutes = monthlyStudyMinutes(data, studentId, month);
   const hwRate = monthlyHomeworkSubmitRate(data, studentId, month);
+  const [showStudy, setShowStudy] = useState(false);
+  const studyBlocks = studyBlocksForMonth(data, studentId, month);
+  const studyByDate = [];
+  studyBlocks.forEach(b => { const last = studyByDate[studyByDate.length - 1]; if (last && last.date === b.date) last.blocks.push(b); else studyByDate.push({ date: b.date, blocks: [b] }); });
+  const warnCount = studyBlocks.filter(b => b.dup || b.long).length;
+  const removeBlock = (id) => { if (confirm("이 공부 기록을 지울까요? 학생 플래너에서도 지워져요.")) setData({ ...data, plannerBlocks: data.plannerBlocks.filter(b => b.id !== id) }); };
 
   const sendReport = () => {
     const message = buildMonthlyReportText(student, month, itemAverages, overall, testAvg, avgPracticeCount, avgAccuracy, studyMinutes, hwRate);
@@ -3956,9 +3974,26 @@ function MonthlyRoutineBlock({ data, setData, studentId, month, showAlertButton 
         <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>실제 달성률 {overall === null ? "-" : `${overall}%`}</span>
       </div>
       <ul className="flex flex-col gap-1.5">
-        <li className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
-          <span className="text-sm" style={{ color: "#2b2417" }}>총 순공시간</span>
-          <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>{formatMinutes(studyMinutes)}</span>
+        <li className="rounded-lg" style={{ background: "#efe6d0" }}>
+          <button onClick={() => setShowStudy(!showStudy)} className="w-full flex items-center justify-between p-2 text-left">
+            <span className="text-sm" style={{ color: "#2b2417" }}>총 순공시간 <span className="text-[11px]" style={{ color: "#8a7f5e" }}>{showStudy ? "▲ 접기" : "▼ 날짜별 보기"}</span>{warnCount > 0 && <span className="text-[11px] font-semibold ml-1" style={{ color: "var(--coral)" }}>· 확인 필요 {warnCount}</span>}</span>
+            <span className="text-sm font-bold" style={{ color: "var(--gold)" }}>{formatMinutes(studyMinutes)}</span>
+          </button>
+          {showStudy && (
+            <div className="px-2 pb-2 flex flex-col gap-1.5">
+              {studyByDate.length === 0 ? <p className="text-xs" style={{ color: "#8a7f5e" }}>이번 달 순공 기록이 없어요.</p> : studyByDate.map(d => (
+                <div key={d.date} className="rounded-md px-2 py-1.5" style={{ background: "#fffaf0" }}>
+                  <div className="flex justify-between text-xs font-semibold" style={{ color: "#2b2417" }}><span>{shortMD(d.date)} ({dayLabelForDateStr(d.date)})</span><span>{formatMinutes(d.blocks.filter(b => !b.dup).reduce((s, b) => s + b.minutes, 0))}</span></div>
+                  {d.blocks.map(b => (
+                    <div key={b.id} className="flex items-center justify-between gap-2 text-[11px] mt-0.5" style={{ color: b.dup || b.long ? "var(--coral)" : "#5c543e" }}>
+                      <span>{b.start}~{b.end} · {b.subject || "기타"}{b.detail ? ` · ${b.detail}` : ""} · {formatMinutes(b.minutes)}{b.dup ? " · 같은 기록이 두 번 저장됨 (합계에서 뺐어요)" : (b.long ? " · 한 번에 5시간 넘음, 확인 필요" : "")}</span>
+                      {showAlertButton && <button onClick={() => removeBlock(b.id)} className="flex-shrink-0" title="이 기록 지우기"><X size={12} color="#8a7f5e" /></button>}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </li>
         {hwRate !== null && (
           <li className="flex items-center justify-between p-2 rounded-lg" style={{ background: "#efe6d0" }}>
